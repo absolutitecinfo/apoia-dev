@@ -12,7 +12,9 @@ import type {
   WebhookAniversariantesEnvioRequest,
   WebhookCobrancaRequest,
   WebhookCobrancaEnvioRequest,
-  DashboardMetrics
+  DashboardMetrics,
+  Regra,
+  RegraDetalhe
 } from './types'
 
 // URLs dos webhooks
@@ -687,6 +689,148 @@ export const api = {
     // Implementar salvamento de configurações no Supabase conforme necessário
     console.log('Salvando configurações para empresa:', empresaId, dados)
     return { success: true, data: null }
+  },
+
+  // === FUNÇÕES PARA REGRAS DE AUTOMAÇÃO ===
+
+  // Buscar regras da empresa
+  async getRegras(empresaId: string): Promise<ApiResponse<Regra[]>> {
+    try {
+      const empresaIdNumber = parseEmpresaId(empresaId)
+      const { data, error } = await supabase
+        .from('regras')
+        .select('*')
+        .eq('empresa_id', empresaIdNumber)
+        .order('id', { ascending: true })
+
+      if (error) {
+        console.error('Erro ao buscar regras:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, data: data || [] }
+    } catch (error) {
+      console.error('Erro ao buscar regras:', error)
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
+      }
+    }
+  },
+
+  // Buscar detalhes das regras
+  async getRegrasDetalhes(regraId: number): Promise<ApiResponse<RegraDetalhe[]>> {
+    try {
+      const { data, error } = await supabase
+        .from('regras_detalhes')
+        .select('*')
+        .eq('regra_id', regraId)
+        .order('valor', { ascending: true })
+
+      if (error) {
+        console.error('Erro ao buscar detalhes das regras:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, data: data || [] }
+    } catch (error) {
+      console.error('Erro ao buscar detalhes das regras:', error)
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
+      }
+    }
+  },
+
+  // Buscar regras completas com detalhes (para Setup)
+  async getRegrasCompletas(empresaId: string): Promise<ApiResponse<any[]>> {
+    try {
+      const empresaIdNumber = parseEmpresaId(empresaId)
+      
+      // Buscar regras com join nos pacote_detalhes
+      const { data, error } = await supabase
+        .from('regras')
+        .select(`
+          *,
+          pacote_detalhes:pacote_det_id (
+            id,
+            item,
+            ativo
+          ),
+          regras_detalhes (
+            id,
+            habilitado,
+            valor,
+            descricao,
+            auto
+          )
+        `)
+        .eq('empresa_id', empresaIdNumber)
+        .order('id', { ascending: true })
+
+      if (error) {
+        console.error('Erro ao buscar regras completas:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, data: data || [] }
+    } catch (error) {
+      console.error('Erro ao buscar regras completas:', error)
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
+      }
+    }
+  },
+
+  // Atualizar regra
+  async atualizarRegra(regraId: number, dados: Partial<Regra>): Promise<ApiResponse<Regra>> {
+    try {
+      const { data, error } = await supabase
+        .from('regras')
+        .update(dados)
+        .eq('id', regraId)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Erro ao atualizar regra:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, data }
+    } catch (error) {
+      console.error('Erro ao atualizar regra:', error)
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
+      }
+    }
+  },
+
+  // Atualizar detalhe da regra
+  async atualizarRegraDetalhe(detalheId: number, dados: Partial<RegraDetalhe>): Promise<ApiResponse<RegraDetalhe>> {
+    try {
+      const { data, error } = await supabase
+        .from('regras_detalhes')
+        .update(dados)
+        .eq('id', detalheId)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Erro ao atualizar detalhe da regra:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, data }
+    } catch (error) {
+      console.error('Erro ao atualizar detalhe da regra:', error)
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
+      }
+    }
   }
 }
 
