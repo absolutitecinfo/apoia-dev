@@ -29,13 +29,26 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
   const [realtimeConnected, setRealtimeConnected] = useState(false)
   const [dataInicial, setDataInicial] = useState(new Date().toISOString().split('T')[0])
   const [dataFinal, setDataFinal] = useState(new Date().toISOString().split('T')[0])
-  const [mensagemPadrao, setMensagemPadrao] = useState("Feliz aniversário! 🎉")
+  const [mensagemPadrao, setMensagemPadrao] = useState("Feliz aniversário, [nome]! 🎉")
   const [searchTerm, setSearchTerm] = useState("")
 
   // Função para toast (simples alert se toast não estiver disponível)
   const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
     console.log(`${type.toUpperCase()}: ${message}`)
     alert(`${type.toUpperCase()}: ${message}`)
+  }
+
+  // Função para processar variáveis na mensagem
+  const processarMensagem = (mensagem: string, aniversariante: Aniversariante): string => {
+    if (!mensagem) return mensagem
+
+    // Extrair o primeiro nome (antes do primeiro espaço)
+    const primeiroNome = aniversariante.nome?.split(' ')[0] || 'Amigo(a)'
+    
+    // Substituir as variáveis
+    return mensagem
+      .replace(/\[nome\]/gi, primeiroNome)
+      .replace(/\[nome_completo\]/gi, aniversariante.nome || 'Aniversariante')
   }
 
   // Função para buscar aniversariantes (1ª chamada)
@@ -183,10 +196,14 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
       // Filtra apenas aniversariantes que não foram enviados
       const aniversariantesParaEnvio = aniversariantes
         .filter(a => !a.enviou_msg)
-        .map(aniversariante => ({
-          ...aniversariante,
-          mensagem: aniversariante.mensagem || mensagemPadrao
-        }))
+        .map(aniversariante => {
+          const mensagemBase = aniversariante.mensagem || mensagemPadrao
+          const mensagemProcessada = processarMensagem(mensagemBase, aniversariante)
+          return {
+            ...aniversariante,
+            mensagem: mensagemProcessada
+          }
+        })
 
       if (aniversariantesParaEnvio.length === 0) {
         showToast("Não há mensagens pendentes para envio", 'info')
@@ -240,9 +257,12 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
   const enviarMensagemIndividual = async (aniversariante: Aniversariante) => {
     setLoadingIndividual(aniversariante.id)
     try {
+      const mensagemBase = aniversariante.mensagem || mensagemPadrao
+      const mensagemProcessada = processarMensagem(mensagemBase, aniversariante)
+      
       const aniversarianteComMensagem = {
         ...aniversariante,
-        mensagem: aniversariante.mensagem || mensagemPadrao
+        mensagem: mensagemProcessada
       }
 
       const result = await api.enviarMensagensAniversariantes("00184385000194", [aniversarianteComMensagem])
@@ -458,72 +478,6 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
               <RefreshCw className={`h-4 w-4 ${loadingRefresh ? 'animate-spin' : ''}`} />
               {loadingRefresh ? 'Atualizando...' : 'Atualizar Lista'}
             </Button>
-            
-            <Button 
-              variant="secondary"
-              onClick={async () => {
-                console.log('🔍 DEBUG: Verificando dados diretamente...')
-                try {
-                  // Buscar todos os dados
-                  const { data: todos, error } = await supabase
-                    .from('aniversariantes')
-                    .select('*')
-                    .order('created_at', { ascending: false })
-                  
-                  console.log('📋 TODOS os dados da tabela:', todos)
-                  console.log('❌ Erro (se houver):', error)
-                  
-                  if (todos && todos.length > 0) {
-                    // Agrupar por empresa
-                    const porEmpresa = todos.reduce((acc: any, item) => {
-                      acc[item.empresa_id] = (acc[item.empresa_id] || 0) + 1
-                      return acc
-                    }, {})
-                    console.log('📊 Dados por empresa_id:', porEmpresa)
-                    
-                    // Mostrar todos os dados na tela temporariamente
-                    setAniversariantes(todos)
-                    showToast(`Debug: ${todos.length} registros encontrados na tabela! Empresas: ${Object.keys(porEmpresa).join(', ')}`, 'info')
-                  } else {
-                    showToast('Debug: Tabela vazia ou erro na consulta', 'error')
-                  }
-                } catch (err) {
-                  console.error('Erro no debug:', err)
-                  showToast('Erro no debug - verifique o console', 'error')
-                }
-              }}
-              className="flex items-center gap-2"
-            >
-              🔍 Debug: Ver Todos
-            </Button>
-            
-            <Button 
-              variant="destructive"
-              onClick={async () => {
-                console.log('🎯 FORÇAR: Buscando com empresa_id=999...')
-                try {
-                  const { data: dados999, error } = await supabase
-                    .from('aniversariantes')
-                    .select('*')
-                    .eq('empresa_id', 999)
-                    .order('created_at', { ascending: false })
-                  
-                  console.log('📋 Dados para empresa_id=999:', dados999)
-                  
-                  if (dados999 && dados999.length > 0) {
-                    setAniversariantes(dados999)
-                    showToast(`Forçado: ${dados999.length} registros para empresa 999!`, 'success')
-                  } else {
-                    showToast('Nenhum dado para empresa 999', 'warning')
-                  }
-                } catch (err) {
-                  console.error('Erro ao forçar empresa 999:', err)
-                }
-              }}
-              className="flex items-center gap-2"
-            >
-              🎯 Forçar: Empresa 999
-            </Button>
           </div>
         </CardContent>
       </Card>
@@ -547,14 +501,32 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
                 onChange={(e) => setMensagemPadrao(e.target.value)}
                 rows={3}
               />
+              <div className="text-xs text-muted-foreground">
+                💡 <strong>Variáveis disponíveis:</strong> [nome] = primeiro nome, [nome_completo] = nome completo
+              </div>
             </div>
+            
+            {/* Preview da mensagem */}
+            {aniversariantes.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Preview da Mensagem</Label>
+                <div className="p-3 bg-gray-50 border rounded-md">
+                  <div className="text-sm">
+                    <strong>Exemplo com "{aniversariantes[0]?.nome || 'João Silva'}":</strong>
+                  </div>
+                  <div className="text-sm mt-1 italic">
+                    "{processarMensagem(mensagemPadrao, aniversariantes[0] || { nome: 'João Silva' } as Aniversariante)}"
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="flex gap-2">
               <Button 
                 onClick={() => {
                   setAniversariantes(prev => 
                     prev.map(a => ({ ...a, mensagem: mensagemPadrao }))
                   )
-                  showToast("Mensagem padrão aplicada a todos!", 'success')
+                  showToast("Mensagem padrão aplicada a todos! Use [nome] para personalizar.", 'success')
                 }}
                 variant="outline"
               >
@@ -638,12 +610,20 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Textarea
-                        value={aniversariante.mensagem || ''}
-                        onChange={(e) => atualizarMensagem(aniversariante.id, e.target.value)}
-                        rows={2}
-                        className="min-w-[200px]"
-                      />
+                      <div className="space-y-2">
+                        <Textarea
+                          value={aniversariante.mensagem || ''}
+                          onChange={(e) => atualizarMensagem(aniversariante.id, e.target.value)}
+                          rows={2}
+                          className="min-w-[200px]"
+                          placeholder={mensagemPadrao}
+                        />
+                        {(aniversariante.mensagem || mensagemPadrao).includes('[nome]') && (
+                          <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
+                            <strong>Preview:</strong> "{processarMensagem(aniversariante.mensagem || mensagemPadrao, aniversariante)}"
+                          </div>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Button 
