@@ -13,6 +13,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: false, // Não precisamos de autenticação persistente para este dashboard
   },
+  realtime: {
+    params: {
+      eventsPerSecond: 10, // Limite de eventos por segundo para evitar spam
+    },
+  },
 })
 
 // Função para testar a conexão

@@ -18,18 +18,44 @@ interface SetupTabProps {
 export function SetupTab({ empresaId, isLoading }: SetupTabProps) {
   const [empresa, setEmpresa] = useState<Empresa | null>(null)
   const [configuracoes, setConfiguracoes] = useState<VwPacoteDetalhesRegras[]>([])
+  const [dbStatus, setDbStatus] = useState<'checking' | 'connected' | 'mock' | 'error'>('checking')
   
   // Buscar dados da empresa
   useEffect(() => {
     const fetchEmpresaData = async () => {
-      const empresaResult = await api.getEmpresaData(empresaId)
-      if (empresaResult.success && empresaResult.data) {
-        setEmpresa(empresaResult.data)
-      }
-      
-      const configResult = await api.getEmpresaConfiguracoes(empresaId)
-      if (configResult.success && configResult.data) {
-        setConfiguracoes(configResult.data)
+      try {
+        console.log('🔄 SetupTab: Iniciando busca de dados para empresa ID:', empresaId)
+        
+        const empresaResult = await api.getEmpresaData(empresaId)
+        console.log('📊 SetupTab: Resultado da empresa:', empresaResult)
+        
+        if (empresaResult.success && empresaResult.data) {
+          setEmpresa(empresaResult.data)
+          console.log('✅ SetupTab: Dados da empresa carregados:', empresaResult.data)
+          
+          // Detectar se é mock ou dados reais
+          if (empresaResult.data.empresa?.includes('Mock')) {
+            setDbStatus('mock')
+          } else {
+            setDbStatus('connected')
+          }
+        } else {
+          console.error('❌ SetupTab: Erro ao carregar empresa:', empresaResult.error)
+          setDbStatus('error')
+        }
+        
+        const configResult = await api.getEmpresaConfiguracoes(empresaId)
+        console.log('📊 SetupTab: Resultado das configurações:', configResult)
+        
+        if (configResult.success && configResult.data) {
+          setConfiguracoes(configResult.data)
+          console.log('✅ SetupTab: Configurações carregadas:', configResult.data)
+        } else {
+          console.warn('⚠️ SetupTab: Configurações não encontradas:', configResult.error)
+          // Não é um erro crítico se as configurações não existirem
+        }
+      } catch (error) {
+        console.error('💥 SetupTab: Erro inesperado ao buscar dados:', error)
       }
     }
     
@@ -51,10 +77,30 @@ export function SetupTab({ empresaId, isLoading }: SetupTabProps) {
             <Database className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">Ativo</div>
-            <p className="text-xs text-muted-foreground">
-              Configuração completa
-            </p>
+            {dbStatus === 'checking' && (
+              <>
+                <div className="text-2xl font-bold text-yellow-600">Verificando...</div>
+                <p className="text-xs text-muted-foreground">Testando conexão</p>
+              </>
+            )}
+            {dbStatus === 'connected' && (
+              <>
+                <div className="text-2xl font-bold text-green-600">Conectado</div>
+                <p className="text-xs text-muted-foreground">Database ativo</p>
+              </>
+            )}
+            {dbStatus === 'mock' && (
+              <>
+                <div className="text-2xl font-bold text-orange-600">Modo Demo</div>
+                <p className="text-xs text-muted-foreground">Dados mockados</p>
+              </>
+            )}
+            {dbStatus === 'error' && (
+              <>
+                <div className="text-2xl font-bold text-red-600">Erro</div>
+                <p className="text-xs text-muted-foreground">Falha na conexão</p>
+              </>
+            )}
           </CardContent>
         </Card>
         

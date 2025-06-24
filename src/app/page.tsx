@@ -4,7 +4,8 @@ import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Building2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Building2, Settings } from "lucide-react"
 
 // Importando as abas
 import { SetupTab } from "@/components/dashboard/tabs/SetupTab"
@@ -23,15 +24,16 @@ export default function Dashboard() {
     const id = searchParams.get('empresa_id')
     if (id) {
       setEmpresaId(id)
-      // Aqui você faria as chamadas de API usando o empresa_id
-      console.log('Carregando dados para empresa ID:', id)
+      console.log('🏢 Carregando dados para empresa ID:', id)
       
-      // Simulando carregamento de dados
+      // Carregamento mais rápido - dados já estão no Supabase
       setTimeout(() => {
         setIsLoading(false)
-      }, 1500)
+      }, 500)
     } else {
-      setEmpresaId("demo")
+      // Se não tem empresa_id na URL, tenta detectar automaticamente
+      console.log('🔍 Empresa ID não fornecido, usando empresa padrão 999')
+      setEmpresaId("999") // Mudando para 999 que é onde provavelmente estão os dados
       setIsLoading(false)
     }
   }, [searchParams])
@@ -68,12 +70,35 @@ export default function Dashboard() {
               <div>
                 <h1 className="text-xl font-bold">Dashboard Top Automações</h1>
                 <p className="text-sm text-muted-foreground">
-                  Empresa ID: {empresaId}
+                  Empresa ID: <span className="font-mono bg-gray-100 px-2 py-1 rounded">{empresaId}</span>
                 </p>
               </div>
             </div>
-            <div className="text-sm text-muted-foreground">
-              {isLoading ? "Carregando..." : "Dados atualizados"}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${isLoading ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
+                <span className="text-sm text-muted-foreground">
+                  {isLoading ? "Carregando..." : "Sistema Online"}
+                </span>
+              </div>
+              
+              <div className="flex gap-1">
+                {["999", "7", "1", "2"].map(id => (
+                  <Button
+                    key={id}
+                    size="sm"
+                    variant={empresaId === id ? "default" : "outline"}
+                    onClick={() => {
+                      const url = new URL(window.location.href)
+                      url.searchParams.set('empresa_id', id)
+                      window.location.href = url.toString()
+                    }}
+                    className="text-xs"
+                  >
+                    {id}
+                  </Button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -81,14 +106,14 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
-        <Tabs defaultValue="setup" className="space-y-6">
+        <Tabs defaultValue="aniversariantes" className="space-y-6">
           <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="setup">Setup</TabsTrigger>
-            <TabsTrigger value="aniversariantes">Aniversariantes</TabsTrigger>
-            <TabsTrigger value="cobrancas">Cobranças</TabsTrigger>
-            <TabsTrigger value="automacoes">Automações</TabsTrigger>
-            <TabsTrigger value="relatorios">Relatórios</TabsTrigger>
-            <TabsTrigger value="configuracoes">Configurações</TabsTrigger>
+            <TabsTrigger value="aniversariantes">🎉 Aniversariantes</TabsTrigger>
+            <TabsTrigger value="cobrancas">💰 Cobranças</TabsTrigger>
+            <TabsTrigger value="automacoes">⚡ Automações</TabsTrigger>
+            <TabsTrigger value="relatorios">📊 Relatórios</TabsTrigger>
+            <TabsTrigger value="configuracoes">⚙️ Configurações</TabsTrigger>
           </TabsList>
 
           <TabsContent value="setup">

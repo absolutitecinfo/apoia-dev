@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { DollarSign, Clock, AlertTriangle, CheckCircle, Search } from "lucide-react"
 import { useState, useEffect } from "react"
 import { api } from "@/lib/api"
+import { parseEmpresaId } from "@/lib/utils"
 import type { Cobranca } from "@/lib/types"
 
 interface CobrancasTabProps {
@@ -51,7 +52,7 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
           valor: 1500.00,
           parcela: 1,
           created_at: new Date().toISOString(),
-          empresa_id: parseInt(empresaId),
+          empresa_id: parseEmpresaId(empresaId),
           enviou: false,
           mensagem: null,
           whatsapp: null
@@ -68,7 +69,7 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
           valor: 2300.50,
           parcela: 1,
           created_at: new Date().toISOString(),
-          empresa_id: parseInt(empresaId),
+          empresa_id: parseEmpresaId(empresaId),
           enviou: false,
           mensagem: null,
           whatsapp: null
@@ -85,7 +86,7 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
           valor: 850.00,
           parcela: 1,
           created_at: new Date().toISOString(),
-          empresa_id: parseInt(empresaId),
+          empresa_id: parseEmpresaId(empresaId),
           enviou: true,
           mensagem: "Cobrança enviada",
           whatsapp: null
