@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exemplo de Embedding - Dashboard Top Automações</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: #2563eb;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .dashboard-container {
+            width: 100%;
+            height: 800px;
+            border: none;
+        }
+        
+        .controls {
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .empresa-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .empresa-selector label {
+            font-weight: bold;
+        }
+        
+        .empresa-selector select {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .info-box {
+            background: #e7f3ff;
+            border: 1px solid #b3d9ff;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Exemplo de Embedding - Dashboard Top Automações</h1>
+            <p>Este é um exemplo de como embedar o dashboard em seu site</p>
+        </div>
+        
+        <div class="info-box">
+            <h3>📋 Como usar:</h3>
+            <ol>
+                <li>Selecione o ID da empresa no campo abaixo</li>
+                <li>O dashboard será carregado automaticamente</li>
+                <li>Você pode navegar entre as diferentes abas</li>
+                <li>Todos os dados são filtrados pela empresa selecionada</li>
+            </ol>
+        </div>
+        
+        <div class="controls">
+            <div class="empresa-selector">
+                <label for="empresaSelect">ID da Empresa:</label>
+                <select id="empresaSelect" onchange="updateDashboard()">
+                    <option value="123">Empresa 123 - Exemplo Tech</option>
+                    <option value="456">Empresa 456 - Digital Solutions</option>
+                    <option value="789">Empresa 789 - Smart Automation</option>
+                    <option value="demo">Demo - Dados de Demonstração</option>
+                </select>
+                <button onclick="reloadDashboard()" style="margin-left: 10px; padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    🔄 Recarregar
+                </button>
+            </div>
+        </div>
+        
+        <iframe 
+            id="dashboardFrame"
+            class="dashboard-container"
+            src="http://localhost:3000?empresa_id=123"
+            frameborder="0"
+            scrolling="auto">
+        </iframe>
+    </div>
+
+    <script>
+        function updateDashboard() {
+            const select = document.getElementById('empresaSelect');
+            const frame = document.getElementById('dashboardFrame');
+            const empresaId = select.value;
+            
+            // Atualiza a URL do iframe com o novo empresa_id
+            frame.src = `http://localhost:3000?empresa_id=${empresaId}`;
+        }
+        
+        function reloadDashboard() {
+            const frame = document.getElementById('dashboardFrame');
+            frame.src = frame.src; // Força o reload
+        }
+        
+        // Configurações opcionais para comunicação com o iframe
+        window.addEventListener('message', function(event) {
+            // Aqui você pode processar mensagens vindas do dashboard
+            if (event.origin !== 'http://localhost:3000') return;
+            
+            console.log('Mensagem recebida do dashboard:', event.data);
+        });
+    </script>
+</body>
+</html> 

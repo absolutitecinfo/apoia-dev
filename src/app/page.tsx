@@ -1,72 +1,130 @@
-import { FeatureCard } from "@/components/FeatureCard";
-import { Button } from "@/components/ui/button";
-import { ArrowRight, HandCoins, Heart, Shield, Zap } from "lucide-react";
+"use client"
 
+import { useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Building2 } from "lucide-react"
 
-export default function Home() {
+// Importando as abas
+import { SetupTab } from "@/components/dashboard/tabs/SetupTab"
+import { AniversariantesTab } from "@/components/dashboard/tabs/AniversariantesTab"
+import { CobrancasTab } from "@/components/dashboard/tabs/CobrancasTab"
+import { AutomacoesTab } from "@/components/dashboard/tabs/AutomacoesTab"
+import { RelatoriosTab } from "@/components/dashboard/tabs/RelatoriosTab"
+import { ConfiguracoesTab } from "@/components/dashboard/tabs/ConfiguracoesTab"
+
+export default function Dashboard() {
+  const searchParams = useSearchParams()
+  const [empresaId, setEmpresaId] = useState<string>("")
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const id = searchParams.get('empresa_id')
+    if (id) {
+      setEmpresaId(id)
+      // Aqui você faria as chamadas de API usando o empresa_id
+      console.log('Carregando dados para empresa ID:', id)
+      
+      // Simulando carregamento de dados
+      setTimeout(() => {
+        setIsLoading(false)
+      }, 1500)
+    } else {
+      setEmpresaId("demo")
+      setIsLoading(false)
+    }
+  }, [searchParams])
+
+  if (!empresaId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <Building2 className="h-12 w-12 mx-auto mb-4 text-blue-600" />
+            <CardTitle>Dashboard Top Automações</CardTitle>
+            <CardDescription>
+              Parâmetro empresa_id não encontrado na URL
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground text-center">
+              Acesse com: <code className="bg-gray-100 px-2 py-1 rounded">?empresa_id=123</code>
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-b from-white to-gray-50">
-      <header className="container mx-auto py-6 px-4">
-        <div className="flex items-center">
-          <div className="flex items-center text-amber-500 font-bold text-xl">
-            <HandCoins className="h-6 w-6 mr-2" />
-            <span>ApoiaDev</span>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <Building2 className="h-8 w-8 text-blue-600" />
+              <div>
+                <h1 className="text-xl font-bold">Dashboard Top Automações</h1>
+                <p className="text-sm text-muted-foreground">
+                  Empresa ID: {empresaId}
+                </p>
+              </div>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              {isLoading ? "Carregando..." : "Dados atualizados"}
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 flex items-center justify-center">
-        <div className="container mx-auto px-4 py-12 md:py-24">
-          <div className="max-w-3xl mx-auto">
-            <div className="text-center space-y-6">
-              <div className="inline-block bg-amber-100 text-amber-800 px-4 py-1.5 rounded-full text-sm font-medium mb-2">
-                Plataforma para criadores de conteúdo
-              </div>
+      {/* Main Content */}
+      <main className="container mx-auto px-4 py-6">
+        <Tabs defaultValue="setup" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-6">
+            <TabsTrigger value="setup">Setup</TabsTrigger>
+            <TabsTrigger value="aniversariantes">Aniversariantes</TabsTrigger>
+            <TabsTrigger value="cobrancas">Cobranças</TabsTrigger>
+            <TabsTrigger value="automacoes">Automações</TabsTrigger>
+            <TabsTrigger value="relatorios">Relatórios</TabsTrigger>
+            <TabsTrigger value="configuracoes">Configurações</TabsTrigger>
+          </TabsList>
 
-              <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl bg-clip-text text-transparent bg-gradient-to-r from-amber-600 to-amber-400">
-                Monetize seu público de forma descomplicada
-              </h1>
+          <TabsContent value="setup">
+            <SetupTab empresaId={empresaId} isLoading={isLoading} />
+          </TabsContent>
 
-              <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-                Receba doações diretamente dos seus seguidores através de uma página personalizada e elegante, sem
-                complicações.
-              </p>
+          <TabsContent value="aniversariantes">
+            <AniversariantesTab empresaId={empresaId} isLoading={isLoading} />
+          </TabsContent>
 
-              <div className="pt-4">
-                <form>
-                  <Button
-                    type="submit"
-                    size="lg"
-                    className="bg-amber-500 hover:bg-amber-600 text-white font-medium px-8 h-12"
-                  >
-                    Começar agora
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </form>
-              </div>
-            </div>
+          <TabsContent value="cobrancas">
+            <CobrancasTab empresaId={empresaId} isLoading={isLoading} />
+          </TabsContent>
 
-          </div>
+          <TabsContent value="automacoes">
+            <AutomacoesTab empresaId={empresaId} isLoading={isLoading} />
+          </TabsContent>
 
-          <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6">
-            <FeatureCard
-              icon={<Zap className="h-8 w-8 text-amber-600" />}
-              title="Rápido e simples"
-              description="Configure sua página em minutos e comece a receber doações imediatamente."
-            />
-            <FeatureCard
-              icon={<Heart className="h-8 w-8 text-amber-600" />}
-              title="Conexão direta"
-              description="Crie uma conexão mais próxima com seus apoiadores através de mensagens personalizadas."
-            />
-            <FeatureCard
-              icon={<Shield className="h-8 w-8 text-amber-600" />}
-              title="Pagamentos seguros"
-              description="Transações protegidas e transferências automáticas para sua conta bancária."
-            />
-          </div>
-        </div>
+          <TabsContent value="relatorios">
+            <RelatoriosTab empresaId={empresaId} isLoading={isLoading} />
+          </TabsContent>
+
+          <TabsContent value="configuracoes">
+            <ConfiguracoesTab empresaId={empresaId} isLoading={isLoading} />
+          </TabsContent>
+        </Tabs>
       </main>
+
+      {/* Footer para embedding */}
+      <footer className="bg-white border-t py-4 mt-8">
+        <div className="container mx-auto px-4">
+          <p className="text-center text-sm text-muted-foreground">
+            Dashboard Top Automações - Powered by Next.js
+          </p>
+        </div>
+      </footer>
     </div>
-  );
+  )
 }
