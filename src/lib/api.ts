@@ -512,26 +512,68 @@ export const api = {
   // Cobranças - Envio de mensagens (webhook)
   async enviarMensagensCobrancas(cnpj: string, cobrancas: Cobranca[]): Promise<ApiResponse<any>> {
     try {
+      console.log('🚀 Enviando mensagens de cobrança:', {
+        cnpj,
+        quantidade: cobrancas.length,
+        webhook_url: WEBHOOK_COBRANCAS_ENVIO,
+        ambiente: process.env.NODE_ENV,
+        cobrancas: cobrancas.map(c => ({ id: c.id, nome: c.nome, valor: c.valor }))
+      })
+
+      // Formatar payload exatamente como no cURL fornecido
+      const payload = {
+        cnpj: cnpj || null, // Permitir null como no exemplo
+        comando: "atualizar_cobranca",
+        cobrancas: cobrancas.map(cobranca => ({
+          id: cobranca.id,
+          empresa: cobranca.empresa || "1",
+          codigo: cobranca.codigo || "",
+          nome: cobranca.nome,
+          telefone: cobranca.telefone || cobranca.celular || "",
+          celular: cobranca.celular || "",
+          codcobranca: cobranca.codcobranca || "",
+          vencimento: cobranca.vencimento,
+          valor: cobranca.valor?.toString() || "0",
+          parcela: cobranca.parcela || "1",
+          created_at: cobranca.created_at || new Date().toISOString(),
+          empresa_id: cobranca.empresa_id?.toString() || "7",
+          enviou: true, // Sempre true quando enviando
+          mensagem: cobranca.mensagem || "",
+          whatsapp: cobranca.whatsapp || cobranca.celular || ""
+        }))
+      }
+
+      console.log('📤 Payload sendo enviado:', JSON.stringify(payload, null, 2))
+
       const response = await fetch(WEBHOOK_COBRANCAS_ENVIO, {
-        method: 'PUT',
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          cnpj,
-          comando: "atualizar_cobranca",
-          cobrancas
-        })
+        body: JSON.stringify(payload)
+      })
+
+      console.log('📥 Resposta do webhook:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries())
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorText = await response.text()
+        console.error('❌ Erro na resposta do webhook:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText
+        })
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
       }
 
       const data = await response.json()
+      console.log('✅ Resposta bem-sucedida do webhook:', data)
       return { success: true, data }
     } catch (error) {
-      console.error('API Error:', error)
+      console.error('💥 Erro na função enviarMensagensCobrancas:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Erro desconhecido'

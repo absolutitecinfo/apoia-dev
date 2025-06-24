@@ -320,6 +320,12 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
     )
   }
 
+  const atualizarWhatsapp = (id: string, novoWhatsapp: string) => {
+    setCobrancas(prev => 
+      prev.map(c => c.id === id ? { ...c, whatsapp: novoWhatsapp } : c)
+    )
+  }
+
   // Função para enviar mensagem individual
   const enviarMensagemIndividual = async (cobranca: Cobranca) => {
     setLoadingIndividual(cobranca.id)
@@ -367,7 +373,8 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
     .filter(c => !c.enviou) // Só mostra as que ainda não foram enviadas
     .filter(c =>
       (c.nome?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-      (c.celular?.includes(searchTerm) || false)
+      (c.celular?.includes(searchTerm) || false) ||
+      (c.whatsapp?.includes(searchTerm) || false)
     )
 
   // Carregar dados automaticamente ao inicializar
@@ -756,6 +763,8 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
                 <CardTitle>Cobranças Pendentes</CardTitle>
                 <CardDescription>
                   Apenas cobranças que ainda não foram enviadas (enviadas são removidas automaticamente)
+                  <br />
+                  💡 <strong>WhatsApp:</strong> Você pode adicionar um número alternativo para envio da cobrança
                 </CardDescription>
               </div>
               
@@ -773,7 +782,7 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
             <div className="relative">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por nome ou telefone..."
+                placeholder="Buscar por nome, telefone ou WhatsApp..."
                 className="pl-8"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -789,6 +798,7 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
                     <TableHead>Valor</TableHead>
                     <TableHead>Vencimento</TableHead>
                     <TableHead>Celular</TableHead>
+                    <TableHead>WhatsApp</TableHead>
                     <TableHead>Data Coleta</TableHead>
                     <TableHead>Mensagem</TableHead>
                     <TableHead>Ações</TableHead>
@@ -805,6 +815,18 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
                         {cobranca.vencimento ? new Date(cobranca.vencimento).toLocaleDateString('pt-BR') : '-'}
                       </TableCell>
                       <TableCell>{cobranca.celular || '-'}</TableCell>
+                      <TableCell>
+                        <Input
+                          type="tel"
+                          value={cobranca.whatsapp || ''}
+                          onChange={(e) => atualizarWhatsapp(cobranca.id, e.target.value)}
+                          placeholder="(11) 99999-9999"
+                          className="min-w-[140px]"
+                        />
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Número adicional para envio
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div className="text-sm">
                           {new Date(cobranca.created_at).toLocaleDateString('pt-BR')}
