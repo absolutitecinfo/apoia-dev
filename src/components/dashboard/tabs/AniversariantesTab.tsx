@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { Calendar, Search, Send, RefreshCw, MessageSquare, Users } from "lucide-react"
+import { Calendar, Search, Send, RefreshCw, MessageSquare, Users, X, CheckCircle, AlertCircle, Info, AlertTriangle } from "lucide-react"
 import { api } from "@/lib/api"
 import { parseEmpresaId } from "@/lib/utils"
 import { supabase } from "@/lib/supabase"
@@ -31,11 +31,31 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
   const [dataFinal, setDataFinal] = useState(new Date().toISOString().split('T')[0])
   const [mensagemPadrao, setMensagemPadrao] = useState("Feliz aniversário, [nome]! 🎉")
   const [searchTerm, setSearchTerm] = useState("")
+  
+  // Estados para filtros de estatísticas
+  const [filtroEstatisticas, setFiltroEstatisticas] = useState<'hoje' | 'semana' | 'mes' | 'todos'>('todos')
 
-  // Função para toast (simples alert se toast não estiver disponível)
-  const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
+  // Estado para controlar toasts
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const [toastType, setToastType] = useState<'success' | 'error' | 'warning' | 'info'>('info')
+
+  // Função para toast melhorada
+  const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info', autoHide: boolean = true) => {
     console.log(`${type.toUpperCase()}: ${message}`)
-    alert(`${type.toUpperCase()}: ${message}`)
+    setToastMessage(message)
+    setToastType(type)
+    
+    // Auto-hide após 5 segundos se autoHide for true
+    if (autoHide) {
+      setTimeout(() => {
+        setToastMessage(null)
+      }, 5000)
+    }
+  }
+
+  // Função para fechar toast manualmente
+  const closeToast = () => {
+    setToastMessage(null)
   }
 
   // Função para processar variáveis na mensagem
@@ -55,15 +75,26 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
   const coletarAniversariantes = async () => {
     setLoadingColeta(true)
     try {
+      console.log('🚀 Iniciando coleta de aniversariantes...')
       const result = await api.coletarAniversariantes("00184385000194", dataInicial, dataFinal)
       
       if (result.success) {
-        showToast("✅ Solicitação enviada! Os dados aparecerão automaticamente quando processados.", 'success')
+        console.log('✅ Webhook chamado com sucesso:', result.data)
+        showToast("🔄 Processando... Os dados aparecerão automaticamente quando prontos.", 'info', false)
+        
+        // Aguardar um tempo para ver se chegam dados via realtime
+        setTimeout(() => {
+          // Se ainda estiver carregando após 10 segundos, mostrar aviso
+          if (loadingColeta) {
+            showToast("⏳ Processamento pode demorar alguns minutos. Os dados aparecerão automaticamente.", 'warning')
+          }
+        }, 10000)
       } else {
+        console.error('❌ Erro no webhook:', result.error)
         showToast(`Erro: ${result.error}`, 'error')
       }
     } catch (error) {
-      console.error('Erro:', error)
+      console.error('💥 Erro na comunicação:', error)
       showToast("Erro na comunicação com o webhook", 'error')
     } finally {
       setLoadingColeta(false)
@@ -71,7 +102,7 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
   }
 
   // Função para buscar aniversariantes do Supabase (após webhook processar)
-  const buscarAniversariantesSupabase = async (showLoadingState = false) => {
+  const buscarAniversariantesSupabase = async (showLoadingState = false, silentMode = false) => {
     if (showLoadingState) setLoadingRefresh(true)
     try {
       console.log('🔄 Iniciando busca de aniversariantes para empresa:', empresaId)
@@ -101,10 +132,10 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
         )
         
         if (isMockData) {
-          showToast(`${result.data.length} aniversariantes carregados (dados de teste)`, 'info')
+          if (!silentMode) showToast(`${result.data.length} aniversariantes carregados (dados de teste)`, 'info')
           console.log('⚠️ Dados mockados carregados:', result.data)
         } else {
-          showToast(`${result.data.length} aniversariantes carregados do banco`, 'success')
+          if (!silentMode) showToast(`${result.data.length} aniversariantes carregados do banco`, 'success')
           console.log('✅ Dados reais carregados:', result.data)
         }
       } else if (result.success && (!result.data || result.data.length === 0)) {
@@ -120,7 +151,7 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
           if (todosOsDados && todosOsDados.length > 0) {
             console.log('📋 Dados encontrados na tabela (mostrando todos):', todosOsDados)
             setAniversariantes(todosOsDados)
-            showToast(`${todosOsDados.length} aniversariantes encontrados (todos da tabela)`, 'warning')
+            if (!silentMode) showToast(`${todosOsDados.length} aniversariantes encontrados (todos da tabela)`, 'warning')
             
             // Mostrar quais empresas têm dados
             const empresas = todosOsDados.reduce((acc: any, item) => {
@@ -152,15 +183,16 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
             empresa_id: parseEmpresaId(empresaId),
             enviou_msg: false,
             mensagem: 'Feliz aniversário! 🎉',
-            whatsapp_msg: null
+            whatsapp_msg: null,
+            data_envio: null
           }
         ]
         setAniversariantes(mockData)
-        showToast('Carregados dados de fallback para teste', 'warning')
+        if (!silentMode) showToast('Carregados dados de fallback para teste', 'warning')
       }
     } catch (error) {
       console.error('💥 Erro inesperado:', error)
-      showToast("Erro crítico - usando dados de emergência", 'error')
+      if (!silentMode) showToast("Erro crítico - usando dados de emergência", 'error')
       
       // Dados de emergência em caso de erro crítico
       const emergencyData = [
@@ -175,7 +207,8 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
           empresa_id: parseEmpresaId(empresaId),
           enviou_msg: false,
           mensagem: 'Feliz aniversário! 🎉',
-          whatsapp_msg: null
+          whatsapp_msg: null,
+          data_envio: null
         }
       ]
       setAniversariantes(emergencyData)
@@ -214,7 +247,7 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
       const result = await api.enviarMensagensAniversariantes("00184385000194", aniversariantesParaEnvio)
       
       if (result.success) {
-        showToast(`${aniversariantesParaEnvio.length} mensagens enviadas com sucesso!`, 'success')
+        showToast(`🎉 ${aniversariantesParaEnvio.length} mensagens enviadas e removidas da lista!`, 'success')
         
         // Atualiza o status no Supabase para cada aniversariante enviado
         const updatePromises = aniversariantesParaEnvio.map(aniversariante => 
@@ -228,7 +261,7 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
           // Atualiza o estado local
           setAniversariantes(prev => prev.map(a => 
             aniversariantesParaEnvio.find(ap => ap.id === a.id) 
-              ? { ...a, enviou_msg: true, mensagem: a.mensagem || mensagemPadrao }
+              ? { ...a, enviou_msg: true, mensagem: a.mensagem || mensagemPadrao, data_envio: new Date().toISOString() }
               : a
           ))
           showToast("Status atualizado no banco de dados", 'success')
@@ -275,10 +308,10 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
           // Atualiza o estado local
           setAniversariantes(prev => prev.map(a => 
             a.id === aniversariante.id 
-              ? { ...a, enviou_msg: true, mensagem: aniversarianteComMensagem.mensagem }
+              ? { ...a, enviou_msg: true, mensagem: aniversarianteComMensagem.mensagem, data_envio: new Date().toISOString() }
               : a
           ))
-          showToast(`Mensagem enviada para ${aniversariante.nome}`, 'success')
+          showToast(`✅ Mensagem enviada para ${aniversariante.nome} - removido da lista`, 'success')
         } else {
           showToast("Mensagem enviada, mas erro ao atualizar status no banco", 'warning')
         }
@@ -293,11 +326,60 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
     }
   }
 
-  // Filtrar aniversariantes por busca
-  const aniversariantesFiltrados = aniversariantes.filter(a =>
-    (a.nome?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-    (a.celular?.includes(searchTerm) || false)
-  )
+  // Funções para calcular estatísticas por período
+  const getDataLimite = (filtro: typeof filtroEstatisticas) => {
+    const agora = new Date()
+    switch (filtro) {
+      case 'hoje':
+        const hoje = new Date()
+        hoje.setHours(0, 0, 0, 0)
+        return hoje
+      case 'semana':
+        const semana = new Date()
+        semana.setDate(agora.getDate() - 7)
+        return semana
+      case 'mes':
+        const mes = new Date()
+        mes.setMonth(agora.getMonth() - 1)
+        return mes
+      case 'todos':
+      default:
+        return new Date(0) // Início dos tempos
+    }
+  }
+
+  const calcularEstatisticas = (filtro: typeof filtroEstatisticas) => {
+    const dataLimite = getDataLimite(filtro)
+    
+    const coletadosNoPeriodo = aniversariantes.filter(a => 
+      new Date(a.created_at) >= dataLimite
+    )
+    
+    const enviadosNoPeriodo = aniversariantes.filter(a => 
+      a.data_envio && new Date(a.data_envio) >= dataLimite
+    )
+    
+    const pendentesPeriodo = aniversariantes.filter(a => 
+      !a.enviou_msg && new Date(a.created_at) >= dataLimite
+    )
+    
+    return {
+      coletados: coletadosNoPeriodo.length,
+      enviados: enviadosNoPeriodo.length,
+      pendentes: pendentesPeriodo.length,
+      total: aniversariantes.length
+    }
+  }
+
+  const estatisticas = calcularEstatisticas(filtroEstatisticas)
+
+  // Filtrar aniversariantes por busca e status de envio
+  const aniversariantesFiltrados = aniversariantes
+    .filter(a => !a.enviou_msg) // Só mostra os que ainda não foram enviados
+    .filter(a =>
+      (a.nome?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
+      (a.celular?.includes(searchTerm) || false)
+    )
 
   // Carregar dados automaticamente ao inicializar
   useEffect(() => {
@@ -305,6 +387,15 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
       buscarAniversariantesSupabase()
     }
   }, [empresaId])
+
+  // Monitorar mudanças na lista de aniversariantes para fechar toast de processamento
+  useEffect(() => {
+    if (aniversariantes.length > 0 && toastMessage?.includes('Processando')) {
+      console.log('✅ Dados carregados, fechando toast de processamento')
+      closeToast()
+      showToast(`✨ ${aniversariantes.length} aniversariantes carregados com sucesso!`, 'success')
+    }
+  }, [aniversariantes.length, toastMessage])
 
   // Realtime subscription para aniversariantes
   useEffect(() => {
@@ -327,11 +418,27 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
         (payload) => {
           console.log('🔔 Mudança detectada na tabela aniversariantes:', payload)
           
+          // Verificar se é uma inserção de novos dados
+          const isInsert = payload.eventType === 'INSERT'
+          const isUpdate = payload.eventType === 'UPDATE'
+          
           // Atualizar dados automaticamente quando houver mudanças
           setTimeout(() => {
             console.log('🔄 Atualizando dados após mudança no Realtime...')
-            buscarAniversariantesSupabase()
-            showToast('✨ Novos dados disponíveis!', 'success')
+            buscarAniversariantesSupabase(false, true) // silentMode = true
+            
+            // Fechar toast de processamento se estiver aberto
+            if (toastMessage?.includes('Processando') || toastMessage?.includes('processamento')) {
+              closeToast()
+            }
+            
+            if (isInsert) {
+              showToast('✨ Novos aniversariantes carregados!', 'success')
+            } else if (isUpdate) {
+              showToast('🔄 Dados atualizados!', 'info')
+            } else {
+              showToast('📝 Dados modificados!', 'info')
+            }
           }, 500) // Pequeno delay para garantir que os dados foram persistidos
         }
       )
@@ -357,50 +464,135 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
     }
   }, [empresaId]) // Recriar subscription se empresaId mudar
 
+  // Componente Toast
+  const ToastComponent = () => {
+    if (!toastMessage) return null
+    
+    const getToastIcon = () => {
+      switch (toastType) {
+        case 'success': return <CheckCircle className="h-5 w-5 text-green-600" />
+        case 'error': return <AlertCircle className="h-5 w-5 text-red-600" />
+        case 'warning': return <AlertTriangle className="h-5 w-5 text-yellow-600" />
+        case 'info': return <Info className="h-5 w-5 text-blue-600" />
+        default: return <Info className="h-5 w-5 text-blue-600" />
+      }
+    }
+    
+    const getToastBg = () => {
+      switch (toastType) {
+        case 'success': return 'bg-green-50 border-green-200'
+        case 'error': return 'bg-red-50 border-red-200'
+        case 'warning': return 'bg-yellow-50 border-yellow-200'
+        case 'info': return 'bg-blue-50 border-blue-200'
+        default: return 'bg-blue-50 border-blue-200'
+      }
+    }
+    
+    return (
+      <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg border shadow-lg flex items-center gap-3 max-w-md ${getToastBg()}`}>
+        {getToastIcon()}
+        <span className="flex-1 text-sm font-medium">{toastMessage}</span>
+        <button 
+          onClick={closeToast}
+          className="p-1 hover:bg-black/10 rounded-full transition-colors"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    )
+  }
+
   return (
-    <DashboardTab 
-      title="Aniversariantes" 
-      description="Gerencie campanhas de aniversário e envio de mensagens"
-      isLoading={isLoading}
-    >
+    <>
+      <ToastComponent />
+      <DashboardTab 
+        title="Aniversariantes" 
+        description="Gerencie campanhas de aniversário e envio de mensagens"
+        isLoading={isLoading}
+      >
+      {/* Filtro de período para estatísticas */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Período das Estatísticas</CardTitle>
+          <CardDescription>
+            Selecione o período para visualizar as métricas
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-2 flex-wrap">
+            <Button 
+              variant={filtroEstatisticas === 'hoje' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFiltroEstatisticas('hoje')}
+            >
+              Hoje
+            </Button>
+            <Button 
+              variant={filtroEstatisticas === 'semana' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFiltroEstatisticas('semana')}
+            >
+              7 dias
+            </Button>
+            <Button 
+              variant={filtroEstatisticas === 'mes' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFiltroEstatisticas('mes')}
+            >
+              30 dias
+            </Button>
+            <Button 
+              variant={filtroEstatisticas === 'todos' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFiltroEstatisticas('todos')}
+            >
+              Todos
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Cards de métricas */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total de Aniversariantes</CardTitle>
+            <CardTitle className="text-sm font-medium">Coletados no Período</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{aniversariantes.length}</div>
+            <div className="text-2xl font-bold">{estatisticas.coletados}</div>
             <p className="text-xs text-muted-foreground">
-              Período selecionado
+              {filtroEstatisticas === 'todos' ? 'Total geral' : 
+               filtroEstatisticas === 'hoje' ? 'Coletados hoje' :
+               filtroEstatisticas === 'semana' ? 'Últimos 7 dias' :
+               'Últimos 30 dias'}
             </p>
           </CardContent>
         </Card>
         
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Mensagens Enviadas</CardTitle>
+            <CardTitle className="text-sm font-medium">Enviadas no Período</CardTitle>
             <Send className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
-              {aniversariantes.filter(a => a.enviou_msg).length}
+              {estatisticas.enviados}
             </div>
             <p className="text-xs text-muted-foreground">
-              {aniversariantes.length > 0 ? Math.round((aniversariantes.filter(a => a.enviou_msg).length / aniversariantes.length) * 100) : 0}% do total
+              {estatisticas.coletados > 0 ? Math.round((estatisticas.enviados / estatisticas.coletados) * 100) : 0}% dos coletados
             </p>
           </CardContent>
         </Card>
         
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pendentes</CardTitle>
+            <CardTitle className="text-sm font-medium">Pendentes no Período</CardTitle>
             <MessageSquare className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-orange-600">
-              {aniversariantes.filter(a => !a.enviou_msg).length}
+              {estatisticas.pendentes}
             </div>
             <p className="text-xs text-muted-foreground">
               Aguardando envio
@@ -411,16 +603,28 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Status Sistema</CardTitle>
-            <RefreshCw className="h-4 w-4 text-muted-foreground" />
+            <RefreshCw className={`h-4 w-4 text-muted-foreground ${
+              loadingColeta || toastMessage?.includes('Processando') ? 'animate-spin' : ''
+            }`} />
           </CardHeader>
           <CardContent>
             <div className="text-lg font-bold">Empresa: {empresaId}</div>
-            <div className="text-sm">
-              Realtime: <span className={`px-2 py-1 rounded text-xs ${
-                realtimeConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-              }`}>
-                {realtimeConnected ? 'Conectado' : 'Desconectado'}
-              </span>
+            <div className="text-sm space-y-1">
+              <div>
+                Realtime: <span className={`px-2 py-1 rounded text-xs ${
+                  realtimeConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                }`}>
+                  {realtimeConnected ? 'Conectado' : 'Desconectado'}
+                </span>
+              </div>
+              <div>
+                Status: <span className={`px-2 py-1 rounded text-xs ${
+                  loadingColeta || toastMessage?.includes('Processando') ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800'
+                }`}>
+                  {loadingColeta ? 'Enviando...' : 
+                   toastMessage?.includes('Processando') ? 'Processando...' : 'Pronto'}
+                </span>
+              </div>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               ID numérico: {parseEmpresaId(empresaId)}
@@ -459,15 +663,17 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
             </div>
             <Button 
               onClick={coletarAniversariantes}
-              disabled={loadingColeta}
+              disabled={loadingColeta || toastMessage?.includes('Processando')}
               className="flex items-center gap-2"
             >
-              {loadingColeta ? (
+              {loadingColeta || toastMessage?.includes('Processando') ? (
                 <RefreshCw className="h-4 w-4 animate-spin" />
               ) : (
                 <Calendar className="h-4 w-4" />
               )}
-              {loadingColeta ? "Coletando..." : "Coletar Aniversariantes"}
+              {loadingColeta ? "Enviando solicitação..." : 
+               toastMessage?.includes('Processando') ? "Processando..." : 
+               "Coletar Aniversariantes"}
             </Button>
                         <Button 
               variant="outline"
@@ -534,7 +740,7 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
               </Button>
               <Button 
                 onClick={enviarMensagens}
-                disabled={loadingEnvio || aniversariantes.length === 0}
+                disabled={loadingEnvio || aniversariantes.filter(a => !a.enviou_msg).length === 0}
                 className="flex items-center gap-2"
               >
                 {loadingEnvio ? (
@@ -554,9 +760,9 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Lista de Aniversariantes</CardTitle>
+              <CardTitle>Aniversariantes Pendentes</CardTitle>
               <CardDescription>
-                Visualize e edite as mensagens individuais
+                Apenas aniversariantes que ainda não receberam mensagem (enviados são removidos automaticamente)
               </CardDescription>
             </div>
             
@@ -590,6 +796,7 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
                   <TableHead>Data Nascimento</TableHead>
                   <TableHead>Celular</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Data Coleta</TableHead>
                   <TableHead>Mensagem</TableHead>
                   <TableHead>Ações</TableHead>
                 </TableRow>
@@ -608,6 +815,14 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
                       >
                         {aniversariante.enviou_msg === true ? 'Enviado' : 'Pendente'}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        {new Date(aniversariante.created_at).toLocaleDateString('pt-BR')}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {new Date(aniversariante.created_at).toLocaleTimeString('pt-BR')}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="space-y-2">
@@ -652,10 +867,12 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
           ) : (
             <div className="text-center py-8">
               <Calendar className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-lg font-medium">Nenhum aniversariante encontrado</p>
+              <p className="text-lg font-medium">Nenhum aniversariante pendente</p>
               <p className="text-muted-foreground">
                 {aniversariantes.length === 0 
                   ? "Realize uma coleta para visualizar os dados" 
+                  : aniversariantes.filter(a => !a.enviou_msg).length === 0
+                  ? "Todas as mensagens já foram enviadas! 🎉"
                   : "Nenhum resultado para o termo pesquisado"
                 }
               </p>
@@ -664,5 +881,6 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
         </CardContent>
       </Card>
     </DashboardTab>
+    </>
   )
 } 

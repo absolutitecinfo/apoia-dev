@@ -25,6 +25,7 @@ export interface Aniversariante {
   enviou_msg: boolean | null
   mensagem: string | null
   whatsapp_msg: string | null
+  data_envio: string | null // timestamptz
 }
 
 export interface Cobranca {

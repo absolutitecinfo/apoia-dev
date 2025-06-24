@@ -237,7 +237,8 @@ export const api = {
               empresa_id: parseEmpresaId(empresaId),
               enviou_msg: false,
               mensagem: 'Feliz aniversário! 🎉',
-              whatsapp_msg: null
+              whatsapp_msg: null,
+              data_envio: null
             },
             {
               id: 2,
@@ -250,7 +251,8 @@ export const api = {
               empresa_id: parseEmpresaId(empresaId),
               enviou_msg: false,
               mensagem: 'Feliz aniversário! 🎉',
-              whatsapp_msg: null
+              whatsapp_msg: null,
+              data_envio: null
             }
           ]
           return { success: true, data: mockData }
@@ -328,7 +330,8 @@ export const api = {
               empresa_id: empresaIdNumber,
               enviou_msg: false,
               mensagem: 'Feliz aniversário! 🎉',
-              whatsapp_msg: null
+              whatsapp_msg: null,
+              data_envio: null
             }
           ]
           return { success: true, data: mockData }
@@ -349,7 +352,7 @@ export const api = {
       console.error('💥 Erro inesperado ao buscar aniversariantes:', error)
       console.log('🔧 Retornando dados mockados devido ao erro')
       // Em caso de erro inesperado, retorna dados mockados
-      const mockData: Aniversariante[] = [
+            const mockData: Aniversariante[] = [
         {
           id: Math.floor(Math.random() * 1000) + 2000,
           created_at: new Date().toISOString(),
@@ -358,10 +361,11 @@ export const api = {
           dataNascimento: '1990-06-15',
           telefone: null,
           celular: '66999999999',
-                        empresa_id: parseEmpresaId(empresaId),
+          empresa_id: parseEmpresaId(empresaId),
           enviou_msg: false,
           mensagem: 'Feliz aniversário! 🎉',
-          whatsapp_msg: null
+          whatsapp_msg: null,
+          data_envio: null
         }
       ]
       return { success: true, data: mockData }
@@ -551,6 +555,11 @@ export const api = {
       const updateData: any = { [campo]: enviou }
       if (mensagem) {
         updateData.mensagem = mensagem
+      }
+      
+      // Se está marcando como enviado, salvar a data de envio
+      if (enviou && tipo === 'aniversariante') {
+        updateData.data_envio = new Date().toISOString()
       }
 
       const { data, error } = await supabase
