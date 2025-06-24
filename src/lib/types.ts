@@ -44,6 +44,7 @@ export interface Cobranca {
   enviou: boolean | null
   mensagem: string | null
   whatsapp: string | null
+  data_envio: string | null // timestamptz
 }
 
 export interface Pacote {

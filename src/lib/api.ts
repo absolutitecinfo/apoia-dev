@@ -18,8 +18,8 @@ import type {
 // URLs dos webhooks
 const WEBHOOK_ANIVERSARIANTES_COLETA = process.env.WEBHOOK_ANIVERSARIANTES_COLETA || 'https://webhooks.grupotopmarketingzap.com.br/webhook/c77f9b60-9a4d-4ca2-8146-bedf4eebb7ca-aniversariantes-coleta-dashboard'
 const WEBHOOK_ANIVERSARIANTES_ENVIO = process.env.WEBHOOK_ANIVERSARIANTES_ENVIO || 'https://webhooks.grupotopmarketingzap.com.br/webhook/7791d206-c9c5-4683-9061-f2253252f744-aniversariantes-atualizados-dashboard'
-const WEBHOOK_COBRANCAS_COLETA = process.env.WEBHOOK_COBRANCAS_COLETA
-const WEBHOOK_COBRANCAS_ENVIO = process.env.WEBHOOK_COBRANCAS_ENVIO
+const WEBHOOK_COBRANCAS_COLETA = process.env.WEBHOOK_COBRANCAS_COLETA || 'https://webhooks.grupotopmarketingzap.com.br/webhook/22fe2493-8aa7-4e43-800a-5c3a1166daf2-cobrancas-vencidas-coleta-dashboard'
+const WEBHOOK_COBRANCAS_ENVIO = process.env.WEBHOOK_COBRANCAS_ENVIO || 'https://webhooks.grupotopmarketingzap.com.br/webhook/d5d3cf5b-1bbf-492b-a28c-b50cd52acf23-cobrancas-vencidas-atualizado-dashboard'
 
 // Função utilitária para converter empresaId para número, tratando caso "demo"
 function parseEmpresaId(empresaId: string): number {
@@ -467,15 +467,20 @@ export const api = {
   },
 
   // Cobranças - Coleta (webhook - quando você enviar os curls)
-  async coletarCobrancas(cnpj: string, dataInicial?: string, dataFinal?: string): Promise<ApiResponse<any>> {
-    if (!WEBHOOK_COBRANCAS_COLETA) {
-      return { 
-        success: false, 
-        error: 'URL do webhook de coleta de cobranças não configurada. Configure WEBHOOK_COBRANCAS_COLETA no .env' 
-      }
-    }
-
+  async coletarCobrancas(
+    cnpj: string, 
+    tipoCobranca: 'vencidas' | 'vencehoje' | 'venceamanha' | 'custom',
+    dataInicial?: string, 
+    dataFinal?: string
+  ): Promise<ApiResponse<any>> {
     try {
+      const comandoMap = {
+        'vencidas': 'cobrancasvencidas',
+        'vencehoje': 'cobrancasvencehoje', 
+        'venceamanha': 'cobrancasvenceamanha',
+        'custom': 'cobrancascustom'
+      }
+
       const response = await fetch(WEBHOOK_COBRANCAS_COLETA, {
         method: 'POST',
         headers: {
@@ -483,7 +488,7 @@ export const api = {
         },
         body: JSON.stringify({
           cnpj,
-          comando: "cobrancas",
+          comando: comandoMap[tipoCobranca],
           data_inicial: dataInicial,
           data_final: dataFinal
         })
@@ -506,22 +511,15 @@ export const api = {
 
   // Cobranças - Envio de mensagens (webhook)
   async enviarMensagensCobrancas(cnpj: string, cobrancas: Cobranca[]): Promise<ApiResponse<any>> {
-    if (!WEBHOOK_COBRANCAS_ENVIO) {
-      return { 
-        success: false, 
-        error: 'URL do webhook de envio de cobranças não configurada. Configure WEBHOOK_COBRANCAS_ENVIO no .env' 
-      }
-    }
-
     try {
       const response = await fetch(WEBHOOK_COBRANCAS_ENVIO, {
-        method: 'POST',
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           cnpj,
-          comando: "mensagem_cobrancas",
+          comando: "atualizar_cobranca",
           cobrancas
         })
       })
@@ -558,7 +556,7 @@ export const api = {
       }
       
       // Se está marcando como enviado, salvar a data de envio
-      if (enviou && tipo === 'aniversariante') {
+      if (enviou) {
         updateData.data_envio = new Date().toISOString()
       }
 
