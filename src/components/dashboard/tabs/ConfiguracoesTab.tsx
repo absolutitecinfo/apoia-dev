@@ -8,11 +8,11 @@ import { Label } from "@/components/ui/label"
 import { Settings, Bell, Shield, Database, Wifi } from "lucide-react"
 
 interface ConfiguracoesTabProps {
-  empresaId: string
+  empresaChave: string
   isLoading?: boolean
 }
 
-export function ConfiguracoesTab({ empresaId, isLoading }: ConfiguracoesTabProps) {
+export function ConfiguracoesTab({ empresaChave, isLoading }: ConfiguracoesTabProps) {
   return (
     <DashboardTab 
       title="Configurações" 

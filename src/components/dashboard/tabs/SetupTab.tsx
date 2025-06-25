@@ -12,7 +12,7 @@ import { api } from "@/lib/api"
 import type { Empresa, Regra, RegraDetalhe } from "@/lib/types"
 
 interface SetupTabProps {
-  empresaId: string
+  empresaChave: string
   isLoading?: boolean
 }
 
@@ -25,7 +25,7 @@ interface RegraCompleta extends Regra {
   regras_detalhes?: RegraDetalhe[]
 }
 
-export function SetupTab({ empresaId, isLoading }: SetupTabProps) {
+export function SetupTab({ empresaChave, isLoading }: SetupTabProps) {
   const [empresa, setEmpresa] = useState<Empresa | null>(null)
   const [regras, setRegras] = useState<RegraCompleta[]>([])
   const [loading, setLoading] = useState(false)
@@ -48,11 +48,11 @@ export function SetupTab({ empresaId, isLoading }: SetupTabProps) {
     const fetchData = async () => {
       setLoading(true)
       try {
-        console.log('🔄 SetupTab: Carregando dados para empresa ID:', empresaId)
+        console.log('🔄 SetupTab: Carregando dados para empresa chave:', empresaChave)
         
         const [empresaResult, regrasResult] = await Promise.all([
-          api.getEmpresaData(empresaId),
-          api.getRegrasCompletas(empresaId)
+          api.getEmpresaData(empresaChave),
+          api.getRegrasCompletas(empresaChave)
         ])
         
         if (empresaResult.success && empresaResult.data) {
@@ -74,10 +74,10 @@ export function SetupTab({ empresaId, isLoading }: SetupTabProps) {
       }
     }
     
-    if (empresaId) {
+    if (empresaChave) {
       fetchData()
     }
-  }, [empresaId])
+  }, [empresaChave])
 
   // Atualizar regra principal
   const atualizarRegra = async (regraId: number, campo: keyof Regra, valor: any) => {

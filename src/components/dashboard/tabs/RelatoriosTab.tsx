@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button"
 import { FileBarChart, Download, Calendar, Filter } from "lucide-react"
 
 interface RelatoriosTabProps {
-  empresaId: string
+  empresaChave: string
   isLoading?: boolean
 }
 
-export function RelatoriosTab({ empresaId, isLoading }: RelatoriosTabProps) {
+export function RelatoriosTab({ empresaChave, isLoading }: RelatoriosTabProps) {
   const relatorios = [
     { nome: "Vendas Mensais", descricao: "Relatório completo de vendas", ultimaAtualizacao: "Hoje, 14:30" },
     { nome: "Performance de Automações", descricao: "Análise de eficiência", ultimaAtualizacao: "Ontem, 09:15" },

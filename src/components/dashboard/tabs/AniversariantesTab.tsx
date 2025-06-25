@@ -9,18 +9,18 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { Calendar, Search, Send, RefreshCw, MessageSquare, Users, X, CheckCircle, AlertCircle, Info, AlertTriangle } from "lucide-react"
+import { Calendar, Search, Send, RefreshCw, MessageSquare, Users, X, CheckCircle, AlertCircle, Info, AlertTriangle, Trash2 } from "lucide-react"
 import { api } from "@/lib/api"
-import { parseEmpresaId } from "@/lib/utils"
+
 import { supabase } from "@/lib/supabase"
 import type { Aniversariante } from "@/lib/types"
 
 interface AniversariantesTabProps {
-  empresaId: string
+  empresaChave: string
   isLoading?: boolean
 }
 
-export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabProps) {
+export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesTabProps) {
   const [aniversariantes, setAniversariantes] = useState<Aniversariante[]>([])
   const [loadingColeta, setLoadingColeta] = useState(false)
   const [loadingEnvio, setLoadingEnvio] = useState(false)
@@ -34,6 +34,9 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
   
   // Estados para filtros de estatísticas
   const [filtroEstatisticas, setFiltroEstatisticas] = useState<'hoje' | 'semana' | 'mes' | 'todos'>('todos')
+  
+  // Estados para seleção de aniversariantes
+  const [aniversariantesSelecionados, setAniversariantesSelecionados] = useState<Set<number>>(new Set())
 
   // Estado para controlar toasts
   const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -105,8 +108,7 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
   const buscarAniversariantesSupabase = async (showLoadingState = false, silentMode = false) => {
     if (showLoadingState) setLoadingRefresh(true)
     try {
-      console.log('🔄 Iniciando busca de aniversariantes para empresa:', empresaId)
-      console.log('🔢 parseEmpresaId resultado:', parseEmpresaId(empresaId))
+      console.log('🔄 Iniciando busca de aniversariantes para empresa chave:', empresaChave)
       
       // Debug: primeiro vamos ver quantos registros existem na tabela total
       const debugResult = await supabase
@@ -115,7 +117,7 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
         .limit(10)
       console.log('🗂️ Debug - primeiros 10 registros da tabela:', debugResult.data)
       
-      const result = await api.getAniversariantes(empresaId)
+      const result = await api.getAniversariantes(empresaChave)
       
       console.log('📋 Resultado completo da API:', result)
       
@@ -180,7 +182,7 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
             dataNascimento: '1990-06-15',
             telefone: null,
             celular: '66999999999',
-            empresa_id: parseEmpresaId(empresaId),
+            empresa_id: 1,
             enviou_msg: false,
             mensagem: 'Feliz aniversário! 🎉',
             whatsapp_msg: null,
@@ -204,7 +206,7 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
           dataNascimento: '1990-06-15',
           telefone: null,
           celular: '66999999999',
-          empresa_id: parseEmpresaId(empresaId),
+          empresa_id: 1,
           enviou_msg: false,
           mensagem: 'Feliz aniversário! 🎉',
           whatsapp_msg: null,
@@ -226,9 +228,9 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
   const enviarMensagens = async () => {
     setLoadingEnvio(true)
     try {
-      // Filtra apenas aniversariantes que não foram enviados
+      // Filtra apenas aniversariantes que não foram enviados E que estão selecionados
       const aniversariantesParaEnvio = aniversariantes
-        .filter(a => !a.enviou_msg)
+        .filter(a => !a.enviou_msg && aniversariantesSelecionados.has(a.id))
         .map(aniversariante => {
           const mensagemBase = aniversariante.mensagem || mensagemPadrao
           const mensagemProcessada = processarMensagem(mensagemBase, aniversariante)
@@ -239,7 +241,7 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
         })
 
       if (aniversariantesParaEnvio.length === 0) {
-        showToast("Não há mensagens pendentes para envio", 'info')
+        showToast("Nenhum aniversariante selecionado para envio", 'info')
         return
       }
 
@@ -311,6 +313,12 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
               ? { ...a, enviou_msg: true, mensagem: aniversarianteComMensagem.mensagem, data_envio: new Date().toISOString() }
               : a
           ))
+          // Remove o aniversariante da seleção quando enviado
+          setAniversariantesSelecionados(prev => {
+            const newSet = new Set(prev)
+            newSet.delete(aniversariante.id)
+            return newSet
+          })
           showToast(`✅ Mensagem enviada para ${aniversariante.nome} - removido da lista`, 'success')
         } else {
           showToast("Mensagem enviada, mas erro ao atualizar status no banco", 'warning')
@@ -323,6 +331,115 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
       showToast("Erro ao enviar mensagem individual", 'error')
     } finally {
       setLoadingIndividual(null)
+    }
+  }
+
+  // Função para excluir aniversariante da lista e do banco
+  const excluirAniversariante = async (id: number) => {
+    try {
+      console.log('🗑️ Excluindo aniversariante ID:', id)
+      
+      // Excluir do banco de dados
+      const { error } = await supabase
+        .from('aniversariantes')
+        .delete()
+        .eq('id', id)
+      
+      if (error) {
+        console.error('❌ Erro ao excluir do banco:', error)
+        showToast(`Erro ao excluir do banco: ${error.message}`, 'error')
+        return
+      }
+      
+      // Se excluiu com sucesso do banco, remove da lista local
+      setAniversariantes(prev => prev.filter(a => a.id !== id))
+      setAniversariantesSelecionados(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(id)
+        return newSet
+      })
+      
+      console.log('✅ Aniversariante excluído com sucesso')
+      showToast("Aniversariante excluído permanentemente", 'success')
+      
+    } catch (error) {
+      console.error('💥 Erro inesperado ao excluir:', error)
+      showToast("Erro inesperado ao excluir aniversariante", 'error')
+    }
+  }
+
+  // Função para marcar/desmarcar aniversariante individual
+  const toggleAniversariante = (id: number) => {
+    setAniversariantesSelecionados(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      return newSet
+    })
+  }
+
+  // Função para marcar/desmarcar todos os aniversariantes
+  const toggleTodos = () => {
+    const aniversariantesPendentes = aniversariantesFiltrados.map(a => a.id)
+    const todosSelecionados = aniversariantesPendentes.every(id => aniversariantesSelecionados.has(id))
+    
+    if (todosSelecionados) {
+      // Desmarcar todos
+      setAniversariantesSelecionados(prev => {
+        const newSet = new Set(prev)
+        aniversariantesPendentes.forEach(id => newSet.delete(id))
+        return newSet
+      })
+    } else {
+      // Marcar todos
+      setAniversariantesSelecionados(prev => {
+        const newSet = new Set(prev)
+        aniversariantesPendentes.forEach(id => newSet.add(id))
+        return newSet
+      })
+    }
+  }
+
+  // Função para excluir todos os aniversariantes selecionados
+  const excluirTodosSelecionados = async () => {
+    const selecionados = Array.from(aniversariantesSelecionados)
+    
+    if (selecionados.length === 0) {
+      showToast("Nenhum aniversariante selecionado para exclusão", 'warning')
+      return
+    }
+
+    const confirmacao = window.confirm(`Tem certeza que deseja excluir ${selecionados.length} aniversariante(s) permanentemente?`)
+    if (!confirmacao) return
+
+    try {
+      console.log('🗑️ Excluindo aniversariantes selecionados:', selecionados)
+      
+      // Excluir todos do banco de dados
+      const { error } = await supabase
+        .from('aniversariantes')
+        .delete()
+        .in('id', selecionados)
+      
+      if (error) {
+        console.error('❌ Erro ao excluir do banco:', error)
+        showToast(`Erro ao excluir do banco: ${error.message}`, 'error')
+        return
+      }
+      
+      // Se excluiu com sucesso do banco, remove da lista local
+      setAniversariantes(prev => prev.filter(a => !selecionados.includes(a.id)))
+      setAniversariantesSelecionados(new Set())
+      
+      console.log('✅ Aniversariantes excluídos com sucesso')
+      showToast(`${selecionados.length} aniversariante(s) excluído(s) permanentemente`, 'success')
+      
+    } catch (error) {
+      console.error('💥 Erro inesperado ao excluir:', error)
+      showToast("Erro inesperado ao excluir aniversariantes", 'error')
     }
   }
 
@@ -383,10 +500,25 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
 
   // Carregar dados automaticamente ao inicializar
   useEffect(() => {
-    if (empresaId) {
+    if (empresaChave) {
       buscarAniversariantesSupabase()
     }
-  }, [empresaId])
+  }, [empresaChave])
+
+  // Marcar todos os novos aniversariantes por padrão
+  useEffect(() => {
+    const novosPendentes = aniversariantes
+      .filter(a => !a.enviou_msg && !aniversariantesSelecionados.has(a.id))
+      .map(a => a.id)
+    
+    if (novosPendentes.length > 0) {
+      setAniversariantesSelecionados(prev => {
+        const newSet = new Set(prev)
+        novosPendentes.forEach(id => newSet.add(id))
+        return newSet
+      })
+    }
+  }, [aniversariantes])
 
   // Monitorar mudanças na lista de aniversariantes para fechar toast de processamento
   useEffect(() => {
@@ -399,21 +531,20 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
 
   // Realtime subscription para aniversariantes
   useEffect(() => {
-    if (!empresaId) return
+    if (!empresaChave) return
 
-    const empresaIdNumber = parseEmpresaId(empresaId)
-    console.log('🔔 Configurando Realtime para empresa_id:', empresaIdNumber)
+    console.log('🔔 Configurando Realtime para empresa chave:', empresaChave)
 
     // Criar subscription para mudanças na tabela aniversariantes
     const subscription = supabase
-      .channel(`aniversariantes-${empresaIdNumber}`)
+      .channel(`aniversariantes-${empresaChave}`)
       .on(
         'postgres_changes',
         {
           event: '*', // INSERT, UPDATE, DELETE
           schema: 'public',
-          table: 'aniversariantes',
-          filter: `empresa_id=eq.${empresaIdNumber}`
+          table: 'aniversariantes'
+          // Nota: filtro por UUID será implementado quando tivermos a estrutura correta
         },
         (payload) => {
           console.log('🔔 Mudança detectada na tabela aniversariantes:', payload)
@@ -462,7 +593,7 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
       setRealtimeConnected(false)
       subscription.unsubscribe()
     }
-  }, [empresaId]) // Recriar subscription se empresaId mudar
+  }, [empresaChave]) // Recriar subscription se empresaChave mudar
 
   // Componente Toast
   const ToastComponent = () => {
@@ -553,7 +684,7 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
       </Card>
 
       {/* Cards de métricas */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Coletados no Período</CardTitle>
@@ -600,37 +731,7 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
           </CardContent>
         </Card>
         
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Status Sistema</CardTitle>
-            <RefreshCw className={`h-4 w-4 text-muted-foreground ${
-              loadingColeta || toastMessage?.includes('Processando') ? 'animate-spin' : ''
-            }`} />
-          </CardHeader>
-          <CardContent>
-            <div className="text-lg font-bold">Empresa: {empresaId}</div>
-            <div className="text-sm space-y-1">
-              <div>
-                Realtime: <span className={`px-2 py-1 rounded text-xs ${
-                  realtimeConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                }`}>
-                  {realtimeConnected ? 'Conectado' : 'Desconectado'}
-                </span>
-              </div>
-              <div>
-                Status: <span className={`px-2 py-1 rounded text-xs ${
-                  loadingColeta || toastMessage?.includes('Processando') ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800'
-                }`}>
-                  {loadingColeta ? 'Enviando...' : 
-                   toastMessage?.includes('Processando') ? 'Processando...' : 'Pronto'}
-                </span>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              ID numérico: {parseEmpresaId(empresaId)}
-            </p>
-          </CardContent>
-        </Card>
+
       </div>
 
       {/* Controles de período e coleta */}
@@ -740,7 +841,7 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
               </Button>
               <Button 
                 onClick={enviarMensagens}
-                disabled={loadingEnvio || aniversariantes.filter(a => !a.enviou_msg).length === 0}
+                disabled={loadingEnvio || aniversariantesSelecionados.size === 0}
                 className="flex items-center gap-2"
               >
                 {loadingEnvio ? (
@@ -748,7 +849,7 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
                 ) : (
                   <Send className="h-4 w-4" />
                 )}
-                {loadingEnvio ? "Enviando..." : `Enviar Mensagens (${aniversariantes.filter(a => !a.enviou_msg).length})`}
+                {loadingEnvio ? "Enviando..." : `Enviar Mensagens Selecionadas (${aniversariantesSelecionados.size})`}
               </Button>
             </div>
           </div>
@@ -789,22 +890,63 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
         </CardHeader>
         <CardContent>
           {aniversariantesFiltrados.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Data Nascimento</TableHead>
-                  <TableHead>Celular</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Data Coleta</TableHead>
-                  <TableHead>Mensagem</TableHead>
-                  <TableHead>Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {aniversariantesFiltrados.map((aniversariante) => (
-                  <TableRow key={aniversariante.id}>
-                    <TableCell className="font-medium">{aniversariante.nome}</TableCell>
+            <>
+              {/* Controles de seleção */}
+              <div className="flex items-center justify-between mb-4 p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="select-all"
+                      checked={aniversariantesFiltrados.length > 0 && aniversariantesFiltrados.every(a => aniversariantesSelecionados.has(a.id))}
+                      onChange={toggleTodos}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="select-all" className="text-sm font-medium text-gray-700">
+                      Selecionar todos ({aniversariantesFiltrados.length})
+                    </label>
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {aniversariantesSelecionados.size} de {aniversariantesFiltrados.length} selecionados
+                  </div>
+                </div>
+                <Button 
+                  size="sm" 
+                  variant="destructive"
+                  onClick={excluirTodosSelecionados}
+                  disabled={aniversariantesSelecionados.size === 0}
+                  className="flex items-center gap-2"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Excluir Selecionados ({aniversariantesSelecionados.size})
+                </Button>
+              </div>
+              
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">Seleção</TableHead>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Data Nascimento</TableHead>
+                    <TableHead>Celular</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Data Coleta</TableHead>
+                    <TableHead>Mensagem</TableHead>
+                    <TableHead>Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {aniversariantesFiltrados.map((aniversariante) => (
+                    <TableRow key={aniversariante.id}>
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          checked={aniversariantesSelecionados.has(aniversariante.id)}
+                          onChange={() => toggleAniversariante(aniversariante.id)}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                      </TableCell>
+                      <TableCell className="font-medium">{aniversariante.nome}</TableCell>
                     <TableCell>
                       {aniversariante.dataNascimento ? new Date(aniversariante.dataNascimento).toLocaleDateString('pt-BR') : '-'}
                     </TableCell>
@@ -841,29 +983,41 @@ export function AniversariantesTab({ empresaId, isLoading }: AniversariantesTabP
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Button 
-                        size="sm" 
-                        variant="outline"
-                        disabled={aniversariante.enviou_msg === true || loadingIndividual === aniversariante.id}
-                        onClick={() => enviarMensagemIndividual(aniversariante)}
-                        className="flex items-center gap-2"
-                      >
-                        {loadingIndividual === aniversariante.id ? (
-                          <>
-                            <RefreshCw className="h-3 w-3 animate-spin" />
-                            Enviando...
-                          </>
-                        ) : aniversariante.enviou_msg === true ? (
-                          'Enviado'
-                        ) : (
-                          'Enviar'
-                        )}
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          disabled={aniversariante.enviou_msg === true || loadingIndividual === aniversariante.id}
+                          onClick={() => enviarMensagemIndividual(aniversariante)}
+                          className="flex items-center gap-2"
+                        >
+                          {loadingIndividual === aniversariante.id ? (
+                            <>
+                              <RefreshCw className="h-3 w-3 animate-spin" />
+                              Enviando...
+                            </>
+                          ) : aniversariante.enviou_msg === true ? (
+                            'Enviado'
+                          ) : (
+                            'Enviar'
+                          )}
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="destructive"
+                          onClick={() => excluirAniversariante(aniversariante.id)}
+                          className="flex items-center gap-1"
+                          title="Excluir da lista"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+              </Table>
+            </>
           ) : (
             <div className="text-center py-8">
               <Calendar className="h-12 w-12 mx-auto text-muted-foreground mb-4" />

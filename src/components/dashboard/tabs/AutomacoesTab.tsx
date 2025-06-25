@@ -7,11 +7,11 @@ import { Badge } from "@/components/ui/badge"
 import { Bot, Play, Pause, Settings } from "lucide-react"
 
 interface AutomacoesTabProps {
-  empresaId: string
+  empresaChave: string
   isLoading?: boolean
 }
 
-export function AutomacoesTab({ empresaId, isLoading }: AutomacoesTabProps) {
+export function AutomacoesTab({ empresaChave, isLoading }: AutomacoesTabProps) {
   const automacoes = [
     { id: 1, nome: "Email Marketing Semanal", status: "ativo", execucoes: 1250, tipo: "Email" },
     { id: 2, nome: "Follow-up Vendas", status: "ativo", execucoes: 892, tipo: "CRM" },

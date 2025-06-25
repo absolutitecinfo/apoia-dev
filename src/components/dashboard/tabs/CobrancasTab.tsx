@@ -10,18 +10,18 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { DollarSign, Search, Send, RefreshCw, AlertTriangle, Users, X, CheckCircle, AlertCircle, Info, Clock } from "lucide-react"
+import { DollarSign, Search, Send, RefreshCw, AlertTriangle, Users, X, CheckCircle, AlertCircle, Info, Clock, Trash2 } from "lucide-react"
 import { api } from "@/lib/api"
-import { parseEmpresaId } from "@/lib/utils"
+
 import { supabase } from "@/lib/supabase"
 import type { Cobranca } from "@/lib/types"
 
 interface CobrancasTabProps {
-  empresaId: string
+  empresaChave: string
   isLoading?: boolean
 }
 
-export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
+export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
   const [cobrancas, setCobrancas] = useState<Cobranca[]>([])
   const [loadingColeta, setLoadingColeta] = useState(false)
   const [loadingEnvio, setLoadingEnvio] = useState(false)
@@ -36,6 +36,9 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
   
   // Estados para filtros de estatísticas
   const [filtroEstatisticas, setFiltroEstatisticas] = useState<'hoje' | 'semana' | 'mes' | 'todos'>('todos')
+
+  // Estados para seleção de cobranças
+  const [cobrancasSelecionadas, setCobrancasSelecionadas] = useState<Set<string>>(new Set())
 
   // Estado para controlar toasts
   const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -134,6 +137,15 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
     setLoadingColeta(true)
     try {
       console.log('🚀 Iniciando coleta de cobranças...')
+      
+      // Se for período customizado, limpar cache local primeiro
+      if (tipoCobranca === 'custom') {
+        console.log('🧹 Limpando cache local para período customizado...')
+        setCobrancas([])
+        setCobrancasSelecionadas(new Set())
+        showToast("🧹 Cache limpo para nova consulta personalizada", 'info')
+      }
+      
       const result = await api.coletarCobrancas("00184385000194", tipoCobranca, dataInicial, dataFinal)
       
       if (result.success) {
@@ -159,12 +171,19 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
   }
 
   // Função para buscar cobranças do Supabase (após webhook processar)
-  const buscarCobrancasSupabase = async (showLoadingState = false, silentMode = false) => {
+  const buscarCobrancasSupabase = async (showLoadingState = false, silentMode = false, clearCache = false) => {
     if (showLoadingState) setLoadingRefresh(true)
     try {
-      console.log('🔄 Iniciando busca de cobranças para empresa:', empresaId)
+      console.log('🔄 Iniciando busca de cobranças para empresa:', empresaChave)
       
-      const result = await api.getCobrancas(empresaId)
+      // Se solicitado limpeza de cache, limpar dados locais primeiro
+      if (clearCache) {
+        console.log('🧹 Limpando cache local antes da busca...')
+        setCobrancas([])
+        setCobrancasSelecionadas(new Set())
+      }
+      
+      const result = await api.getCobrancas(empresaChave)
       
       console.log('📋 Resultado completo da API:', result)
       
@@ -208,7 +227,7 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
             valor: 150.00,
             parcela: 1,
             created_at: new Date().toISOString(),
-            empresa_id: parseEmpresaId(empresaId),
+            empresa_id: 1,
             enviou: false,
             mensagem: mensagemPadrao,
             whatsapp: null,
@@ -236,7 +255,7 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
           valor: 100.00,
           parcela: 1,
           created_at: new Date().toISOString(),
-          empresa_id: parseEmpresaId(empresaId),
+          empresa_id: 1,
           enviou: false,
           mensagem: mensagemPadrao,
           whatsapp: null,
@@ -250,31 +269,63 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
   }
 
   // Função específica para o botão de refresh
-  const refreshCobrancas = async () => {
-    await buscarCobrancasSupabase(true)
+  const refreshCobrancas = async (clearCache = false) => {
+    await buscarCobrancasSupabase(true, false, clearCache)
+  }
+
+  // Wrapper para o botão de refresh
+  const handleRefreshClick = () => {
+    refreshCobrancas(false)
+  }
+
+  // Função para refresh com limpeza de cache
+  const handleRefreshWithClearCache = () => {
+    refreshCobrancas(true)
   }
 
   // Função para enviar mensagens (2ª chamada)
   const enviarMensagens = async () => {
     setLoadingEnvio(true)
     try {
-      // Filtra apenas cobranças que não foram enviadas
-      const cobrancasParaEnvio = cobrancas
-        .filter(c => !c.enviou)
+      // Filtra apenas cobranças que não foram enviadas E que estão selecionadas
+      const cobrancasSelecionadasParaEnvio = cobrancas
+        .filter(c => !c.enviou && cobrancasSelecionadas.has(c.id))
+      
+      const cobrancasComNumeroValido = cobrancasSelecionadasParaEnvio
+        .filter(c => {
+          // Só incluir cobranças que tenham pelo menos um número válido
+          const numeroParaEnvio = c.whatsapp?.trim() || c.celular
+          return numeroParaEnvio && numeroParaEnvio.trim().length > 0
+        })
+
+      const cobrancasParaEnvio = cobrancasComNumeroValido
         .map(cobranca => {
           const mensagemBase = cobranca.mensagem || mensagemPadrao
           const mensagemProcessada = processarMensagem(mensagemBase, cobranca)
+          // Usar o WhatsApp se estiver preenchido, senão usar o celular
+          const numeroParaEnvio = cobranca.whatsapp?.trim() || cobranca.celular
           return {
             ...cobranca,
             mensagem: mensagemProcessada,
             enviou: true,
-            whatsapp: cobranca.celular
+            whatsapp: numeroParaEnvio
           }
         })
 
-      if (cobrancasParaEnvio.length === 0) {
-        showToast("Não há mensagens pendentes para envio", 'info')
+      if (cobrancasSelecionadasParaEnvio.length === 0) {
+        showToast("Nenhuma cobrança selecionada para envio", 'info')
         return
+      }
+
+      if (cobrancasParaEnvio.length === 0) {
+        showToast("Nenhuma das cobranças selecionadas possui número válido para envio", 'warning')
+        return
+      }
+
+      // Informar se algumas cobranças foram filtradas
+      const cobrancasFiltradas = cobrancasSelecionadasParaEnvio.length - cobrancasParaEnvio.length
+      if (cobrancasFiltradas > 0) {
+        showToast(`⚠️ ${cobrancasFiltradas} cobrança(s) ignorada(s) por não ter número válido`, 'warning')
       }
 
       // Chama o webhook para envio das mensagens
@@ -326,18 +377,33 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
     )
   }
 
+  const atualizarCelular = (id: string, novoCelular: string) => {
+    setCobrancas(prev => 
+      prev.map(c => c.id === id ? { ...c, celular: novoCelular } : c)
+    )
+  }
+
   // Função para enviar mensagem individual
   const enviarMensagemIndividual = async (cobranca: Cobranca) => {
     setLoadingIndividual(cobranca.id)
     try {
+      // Verificar se há um número válido para envio
+      const numeroParaEnvio = cobranca.whatsapp?.trim() || cobranca.celular
+      if (!numeroParaEnvio || numeroParaEnvio.trim().length === 0) {
+        showToast("Não há número válido para envio desta cobrança", 'error')
+        return
+      }
+
       const mensagemBase = cobranca.mensagem || mensagemPadrao
       const mensagemProcessada = processarMensagem(mensagemBase, cobranca)
+      
+      // Usar o WhatsApp se estiver preenchido, senão usar o celular
       
       const cobrancaComMensagem = {
         ...cobranca,
         mensagem: mensagemProcessada,
         enviou: true,
-        whatsapp: cobranca.celular
+        whatsapp: numeroParaEnvio
       }
 
       const result = await api.enviarMensagensCobrancas("00184385000194", [cobrancaComMensagem])
@@ -353,6 +419,12 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
               ? { ...c, enviou: true, mensagem: cobrancaComMensagem.mensagem, data_envio: new Date().toISOString() }
               : c
           ))
+          // Remove a cobrança da seleção quando enviada
+          setCobrancasSelecionadas(prev => {
+            const newSet = new Set(prev)
+            newSet.delete(cobranca.id)
+            return newSet
+          })
           showToast(`✅ Mensagem enviada para ${cobranca.nome} - removido da lista`, 'success')
         } else {
           showToast("Mensagem enviada, mas erro ao atualizar status no banco", 'warning')
@@ -368,6 +440,115 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
     }
   }
 
+  // Função para excluir cobrança da lista e do banco
+  const excluirCobranca = async (id: string) => {
+    try {
+      console.log('🗑️ Excluindo cobrança ID:', id)
+      
+      // Excluir do banco de dados
+      const { error } = await supabase
+        .from('cobranca')
+        .delete()
+        .eq('id', id)
+      
+      if (error) {
+        console.error('❌ Erro ao excluir do banco:', error)
+        showToast(`Erro ao excluir do banco: ${error.message}`, 'error')
+        return
+      }
+      
+      // Se excluiu com sucesso do banco, remove da lista local
+      setCobrancas(prev => prev.filter(c => c.id !== id))
+      setCobrancasSelecionadas(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(id)
+        return newSet
+      })
+      
+      console.log('✅ Cobrança excluída com sucesso')
+      showToast("Cobrança excluída permanentemente", 'success')
+      
+    } catch (error) {
+      console.error('💥 Erro inesperado ao excluir:', error)
+      showToast("Erro inesperado ao excluir cobrança", 'error')
+    }
+  }
+
+  // Função para marcar/desmarcar cobrança individual
+  const toggleCobranca = (id: string) => {
+    setCobrancasSelecionadas(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      return newSet
+    })
+  }
+
+  // Função para marcar/desmarcar todas as cobranças
+  const toggleTodas = () => {
+    const cobrancasPendentes = cobrancasFiltradas.map(c => c.id)
+    const todasSelecionadas = cobrancasPendentes.every(id => cobrancasSelecionadas.has(id))
+    
+    if (todasSelecionadas) {
+      // Desmarcar todas
+      setCobrancasSelecionadas(prev => {
+        const newSet = new Set(prev)
+        cobrancasPendentes.forEach(id => newSet.delete(id))
+        return newSet
+      })
+    } else {
+      // Marcar todas
+      setCobrancasSelecionadas(prev => {
+        const newSet = new Set(prev)
+        cobrancasPendentes.forEach(id => newSet.add(id))
+        return newSet
+      })
+    }
+  }
+
+  // Função para excluir todas as cobranças selecionadas
+  const excluirTodasSelecionadas = async () => {
+    const selecionadas = Array.from(cobrancasSelecionadas)
+    
+    if (selecionadas.length === 0) {
+      showToast("Nenhuma cobrança selecionada para exclusão", 'warning')
+      return
+    }
+
+    const confirmacao = window.confirm(`Tem certeza que deseja excluir ${selecionadas.length} cobrança(s) permanentemente?`)
+    if (!confirmacao) return
+
+    try {
+      console.log('🗑️ Excluindo cobranças selecionadas:', selecionadas)
+      
+      // Excluir todas do banco de dados
+      const { error } = await supabase
+        .from('cobranca')
+        .delete()
+        .in('id', selecionadas)
+      
+      if (error) {
+        console.error('❌ Erro ao excluir do banco:', error)
+        showToast(`Erro ao excluir do banco: ${error.message}`, 'error')
+        return
+      }
+      
+      // Se excluiu com sucesso do banco, remove da lista local
+      setCobrancas(prev => prev.filter(c => !selecionadas.includes(c.id)))
+      setCobrancasSelecionadas(new Set())
+      
+      console.log('✅ Cobranças excluídas com sucesso')
+      showToast(`${selecionadas.length} cobrança(s) excluída(s) permanentemente`, 'success')
+      
+    } catch (error) {
+      console.error('💥 Erro inesperado ao excluir:', error)
+      showToast("Erro inesperado ao excluir cobranças", 'error')
+    }
+  }
+
   // Filtrar cobranças por busca e status de envio
   const cobrancasFiltradas = cobrancas
     .filter(c => !c.enviou) // Só mostra as que ainda não foram enviadas
@@ -379,10 +560,25 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
 
   // Carregar dados automaticamente ao inicializar
   useEffect(() => {
-    if (empresaId) {
+    if (empresaChave) {
       buscarCobrancasSupabase()
     }
-  }, [empresaId])
+  }, [empresaChave])
+
+  // Marcar todas as novas cobranças por padrão
+  useEffect(() => {
+    const novasPendentes = cobrancas
+      .filter(c => !c.enviou && !cobrancasSelecionadas.has(c.id))
+      .map(c => c.id)
+    
+    if (novasPendentes.length > 0) {
+      setCobrancasSelecionadas(prev => {
+        const newSet = new Set(prev)
+        novasPendentes.forEach(id => newSet.add(id))
+        return newSet
+      })
+    }
+  }, [cobrancas])
 
   // Monitorar mudanças na lista de cobranças para fechar toast de processamento
   useEffect(() => {
@@ -395,21 +591,20 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
 
   // Realtime subscription para cobranças
   useEffect(() => {
-    if (!empresaId) return
+    if (!empresaChave) return
 
-    const empresaIdNumber = parseEmpresaId(empresaId)
-    console.log('🔔 Configurando Realtime para cobranças empresa_id:', empresaIdNumber)
+    console.log('🔔 Configurando Realtime para cobranças empresa chave:', empresaChave)
 
     // Criar subscription para mudanças na tabela cobranca
     const subscription = supabase
-      .channel(`cobranca-${empresaIdNumber}`)
+      .channel(`cobranca-${empresaChave}`)
       .on(
         'postgres_changes',
         {
           event: '*', // INSERT, UPDATE, DELETE
           schema: 'public',
-          table: 'cobranca',
-          filter: `empresa_id=eq.${empresaIdNumber}`
+          table: 'cobranca'
+          // Nota: filtro por UUID será implementado quando tivermos a estrutura correta
         },
         (payload) => {
           console.log('🔔 Mudança detectada na tabela cobranca:', payload)
@@ -457,7 +652,7 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
       setRealtimeConnected(false)
       subscription.unsubscribe()
     }
-  }, [empresaId]) // Recriar subscription se empresaId mudar
+  }, [empresaChave]) // Recriar subscription se empresaChave mudar
 
   // Componente Toast
   const ToastComponent = () => {
@@ -617,6 +812,13 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
             <CardTitle>Coletar Cobranças</CardTitle>
             <CardDescription>
               Selecione o tipo de cobrança e período para coleta
+              {tipoCobranca === 'custom' && (
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                  <div className="text-sm text-blue-700">
+                    💡 <strong>Período Customizado:</strong> O cache será automaticamente limpo para evitar conflitos com consultas anteriores.
+                  </div>
+                </div>
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -674,15 +876,28 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
                  "Coletar Cobranças"}
               </Button>
               
-              <Button 
-                variant="outline"
-                onClick={refreshCobrancas}
-                disabled={loadingRefresh}
-                className="flex items-center gap-2"
-              >
-                <RefreshCw className={`h-4 w-4 ${loadingRefresh ? 'animate-spin' : ''}`} />
-                {loadingRefresh ? 'Atualizando...' : 'Atualizar Lista'}
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline"
+                  onClick={handleRefreshClick}
+                  disabled={loadingRefresh}
+                  className="flex items-center gap-2"
+                >
+                  <RefreshCw className={`h-4 w-4 ${loadingRefresh ? 'animate-spin' : ''}`} />
+                  {loadingRefresh ? 'Atualizando...' : 'Atualizar Lista'}
+                </Button>
+                
+                <Button 
+                  variant="outline"
+                  onClick={handleRefreshWithClearCache}
+                  disabled={loadingRefresh}
+                  className="flex items-center gap-2"
+                  title="Atualizar limpando cache local"
+                >
+                  <RefreshCw className={`h-4 w-4 ${loadingRefresh ? 'animate-spin' : ''}`} />
+                  🧹 Limpar Cache
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -740,7 +955,7 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
                 </Button>
                 <Button 
                   onClick={enviarMensagens}
-                  disabled={loadingEnvio || cobrancas.filter(c => !c.enviou).length === 0}
+                  disabled={loadingEnvio || cobrancasSelecionadas.size === 0}
                   className="flex items-center gap-2"
                 >
                   {loadingEnvio ? (
@@ -748,7 +963,7 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
                   ) : (
                     <Send className="h-4 w-4" />
                   )}
-                  {loadingEnvio ? "Enviando..." : `Enviar Mensagens (${cobrancas.filter(c => !c.enviou).length})`}
+                  {loadingEnvio ? "Enviando..." : `Enviar Mensagens Selecionadas (${cobrancasSelecionadas.size})`}
                 </Button>
               </div>
             </div>
@@ -764,7 +979,7 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
                 <CardDescription>
                   Apenas cobranças que ainda não foram enviadas (enviadas são removidas automaticamente)
                   <br />
-                  💡 <strong>WhatsApp:</strong> Você pode adicionar um número alternativo para envio da cobrança
+                  💡 <strong>Números:</strong> Você pode editar o número original ou adicionar um alternativo. O envio usará o número alternativo se preenchido, senão usará o original.
                 </CardDescription>
               </div>
               
@@ -782,7 +997,7 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
             <div className="relative">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por nome, telefone ou WhatsApp..."
+                placeholder="Buscar por nome, celular original ou WhatsApp alternativo..."
                 className="pl-8"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -791,30 +1006,82 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
           </CardHeader>
           <CardContent>
             {cobrancasFiltradas.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>Valor</TableHead>
-                    <TableHead>Vencimento</TableHead>
-                    <TableHead>Celular</TableHead>
-                    <TableHead>WhatsApp</TableHead>
-                    <TableHead>Data Coleta</TableHead>
-                    <TableHead>Mensagem</TableHead>
-                    <TableHead>Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {cobrancasFiltradas.map((cobranca) => (
-                    <TableRow key={cobranca.id}>
-                      <TableCell className="font-medium">{cobranca.nome}</TableCell>
+              <>
+                {/* Controles de seleção */}
+                <div className="flex items-center justify-between mb-4 p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="select-all-cobrancas"
+                        checked={cobrancasFiltradas.length > 0 && cobrancasFiltradas.every(c => cobrancasSelecionadas.has(c.id))}
+                        onChange={toggleTodas}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="select-all-cobrancas" className="text-sm font-medium text-gray-700">
+                        Selecionar todas ({cobrancasFiltradas.length})
+                      </label>
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      {cobrancasSelecionadas.size} de {cobrancasFiltradas.length} selecionadas
+                    </div>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    variant="destructive"
+                    onClick={excluirTodasSelecionadas}
+                    disabled={cobrancasSelecionadas.size === 0}
+                    className="flex items-center gap-2"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Excluir Selecionadas ({cobrancasSelecionadas.size})
+                  </Button>
+                </div>
+                
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">Seleção</TableHead>
+                      <TableHead>Cliente</TableHead>
+                      <TableHead>Valor</TableHead>
+                      <TableHead>Vencimento</TableHead>
+                      <TableHead>Celular Original</TableHead>
+                      <TableHead>WhatsApp Alternativo</TableHead>
+                      <TableHead>Data Coleta</TableHead>
+                      <TableHead>Mensagem</TableHead>
+                      <TableHead>Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {cobrancasFiltradas.map((cobranca) => (
+                      <TableRow key={cobranca.id}>
+                        <TableCell>
+                          <input
+                            type="checkbox"
+                            checked={cobrancasSelecionadas.has(cobranca.id)}
+                            onChange={() => toggleCobranca(cobranca.id)}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                        </TableCell>
+                        <TableCell className="font-medium">{cobranca.nome}</TableCell>
                       <TableCell>
                         R$ {(cobranca.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell>
                         {cobranca.vencimento ? new Date(cobranca.vencimento).toLocaleDateString('pt-BR') : '-'}
                       </TableCell>
-                      <TableCell>{cobranca.celular || '-'}</TableCell>
+                      <TableCell>
+                        <Input
+                          type="tel"
+                          value={cobranca.celular || ''}
+                          onChange={(e) => atualizarCelular(cobranca.id, e.target.value)}
+                          placeholder="(11) 99999-9999"
+                          className="min-w-[140px]"
+                        />
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Número original da consulta
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <Input
                           type="tel"
@@ -824,8 +1091,17 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
                           className="min-w-[140px]"
                         />
                         <div className="text-xs text-muted-foreground mt-1">
-                          Número adicional para envio
+                          Número alternativo (opcional)
                         </div>
+                        {(cobranca.whatsapp?.trim() || cobranca.celular) ? (
+                          <div className="text-xs text-blue-600 mt-1 font-medium">
+                            📱 Enviará para: {cobranca.whatsapp?.trim() || cobranca.celular}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-red-600 mt-1 font-medium">
+                            ⚠️ Sem número para envio
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="text-sm">
@@ -852,29 +1128,41 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          disabled={cobranca.enviou === true || loadingIndividual === cobranca.id}
-                          onClick={() => enviarMensagemIndividual(cobranca)}
-                          className="flex items-center gap-2"
-                        >
-                          {loadingIndividual === cobranca.id ? (
-                            <>
-                              <RefreshCw className="h-3 w-3 animate-spin" />
-                              Enviando...
-                            </>
-                          ) : cobranca.enviou === true ? (
-                            'Enviado'
-                          ) : (
-                            'Enviar'
-                          )}
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            disabled={cobranca.enviou === true || loadingIndividual === cobranca.id}
+                            onClick={() => enviarMensagemIndividual(cobranca)}
+                            className="flex items-center gap-2"
+                          >
+                            {loadingIndividual === cobranca.id ? (
+                              <>
+                                <RefreshCw className="h-3 w-3 animate-spin" />
+                                Enviando...
+                              </>
+                            ) : cobranca.enviou === true ? (
+                              'Enviado'
+                            ) : (
+                              'Enviar'
+                            )}
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="destructive"
+                            onClick={() => excluirCobranca(cobranca.id)}
+                            className="flex items-center gap-1"
+                            title="Excluir da lista"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                    ))}
+                  </TableBody>
+                </Table>
+              </>
             ) : (
               <div className="text-center py-8">
                 <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -894,4 +1182,4 @@ export function CobrancasTab({ empresaId, isLoading }: CobrancasTabProps) {
       </DashboardTab>
     </>
   )
-} 
+}

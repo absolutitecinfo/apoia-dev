@@ -4,8 +4,8 @@ import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Building2 } from "lucide-react"
+import { api } from "@/lib/api"
 
 // Importando as abas
 import { SetupTab } from "@/components/dashboard/tabs/SetupTab"
@@ -15,49 +15,37 @@ import { AutomacoesTab } from "@/components/dashboard/tabs/AutomacoesTab"
 import { RelatoriosTab } from "@/components/dashboard/tabs/RelatoriosTab"
 import { ConfiguracoesTab } from "@/components/dashboard/tabs/ConfiguracoesTab"
 
-export default function DashboardContent() {
-  const searchParams = useSearchParams()
-  const [empresaId, setEmpresaId] = useState<string>("")
-  const [isLoading, setIsLoading] = useState(true)
+// Chave UUID padrão da empresa (fallback)
+const EMPRESA_CHAVE_PADRAO = "14915148-1496-4762-880c-d925aecb9702"
 
+export default function DashboardContent() {
+  const [isLoading, setIsLoading] = useState(true)
+  const [empresaChave, setEmpresaChave] = useState<string>(EMPRESA_CHAVE_PADRAO)
+
+  const searchParams = useSearchParams()
+
+  // Efeito para ler parâmetro da URL
   useEffect(() => {
-    const id = searchParams.get('empresa_id')
-    if (id) {
-      setEmpresaId(id)
-      console.log('🏢 Carregando dados para empresa ID:', id)
-      
-      // Carregamento mais rápido - dados já estão no Supabase
-      setTimeout(() => {
-        setIsLoading(false)
-      }, 500)
+    const chaveUrl = searchParams.get('chave')
+    if (chaveUrl) {
+      console.log('🔗 Chave encontrada na URL:', chaveUrl)
+      setEmpresaChave(chaveUrl)
     } else {
-      // Se não tem empresa_id na URL, tenta detectar automaticamente
-      console.log('🔍 Empresa ID não fornecido, usando empresa padrão 999')
-      setEmpresaId("999") // Mudando para 999 que é onde provavelmente estão os dados
-      setIsLoading(false)
+      console.log('🔗 Usando chave padrão:', EMPRESA_CHAVE_PADRAO)
+      setEmpresaChave(EMPRESA_CHAVE_PADRAO)
     }
   }, [searchParams])
 
-  if (!empresaId) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <Building2 className="h-12 w-12 mx-auto mb-4 text-blue-600" />
-            <CardTitle>Dashboard Top Automações</CardTitle>
-            <CardDescription>
-              Parâmetro empresa_id não encontrado na URL
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground text-center">
-              Acesse com: <code className="bg-gray-100 px-2 py-1 rounded">?empresa_id=123</code>
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
+
+
+  useEffect(() => {
+    console.log('🏢 Carregando dashboard para empresa chave:', empresaChave)
+    
+    // Carregamento mais rápido - dados já estão no Supabase
+    setTimeout(() => {
+      setIsLoading(false)
+    }, 500)
+  }, [empresaChave])
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -69,9 +57,6 @@ export default function DashboardContent() {
               <Building2 className="h-8 w-8 text-blue-600" />
               <div>
                 <h1 className="text-xl font-bold">Dashboard Top Automações</h1>
-                <p className="text-sm text-muted-foreground">
-                  Empresa ID: <span className="font-mono bg-gray-100 px-2 py-1 rounded">{empresaId}</span>
-                </p>
               </div>
             </div>
             <div className="flex items-center gap-4">
@@ -80,24 +65,6 @@ export default function DashboardContent() {
                 <span className="text-sm text-muted-foreground">
                   {isLoading ? "Carregando..." : "Sistema Online"}
                 </span>
-              </div>
-              
-              <div className="flex gap-1">
-                {["999", "7", "1", "2"].map(id => (
-                  <Button
-                    key={id}
-                    size="sm"
-                    variant={empresaId === id ? "default" : "outline"}
-                    onClick={() => {
-                      const url = new URL(window.location.href)
-                      url.searchParams.set('empresa_id', id)
-                      window.location.href = url.toString()
-                    }}
-                    className="text-xs"
-                  >
-                    {id}
-                  </Button>
-                ))}
               </div>
             </div>
           </div>
@@ -117,27 +84,27 @@ export default function DashboardContent() {
           </TabsList>
 
           <TabsContent value="setup">
-            <SetupTab empresaId={empresaId} isLoading={isLoading} />
+            <SetupTab empresaChave={empresaChave} isLoading={isLoading} />
           </TabsContent>
 
           <TabsContent value="aniversariantes">
-            <AniversariantesTab empresaId={empresaId} isLoading={isLoading} />
+            <AniversariantesTab empresaChave={empresaChave} isLoading={isLoading} />
           </TabsContent>
 
           <TabsContent value="cobrancas">
-            <CobrancasTab empresaId={empresaId} isLoading={isLoading} />
+            <CobrancasTab empresaChave={empresaChave} isLoading={isLoading} />
           </TabsContent>
 
           <TabsContent value="automacoes">
-            <AutomacoesTab empresaId={empresaId} isLoading={isLoading} />
+            <AutomacoesTab empresaChave={empresaChave} isLoading={isLoading} />
           </TabsContent>
 
           <TabsContent value="relatorios">
-            <RelatoriosTab empresaId={empresaId} isLoading={isLoading} />
+            <RelatoriosTab empresaChave={empresaChave} isLoading={isLoading} />
           </TabsContent>
 
           <TabsContent value="configuracoes">
-            <ConfiguracoesTab empresaId={empresaId} isLoading={isLoading} />
+            <ConfiguracoesTab empresaChave={empresaChave} isLoading={isLoading} />
           </TabsContent>
         </Tabs>
       </main>

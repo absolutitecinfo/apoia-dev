@@ -2,14 +2,14 @@
 
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
-import { parseEmpresaId } from "@/lib/utils"
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 export default function DebugRealtimePage() {
-  const [empresaId, setEmpresaId] = useState("999")
+  const [empresaChave, setEmpresaChave] = useState("14915148-1496-4762-880c-d925aecb9702")
   const [data, setData] = useState<any[]>([])
   const [realtimeStatus, setRealtimeStatus] = useState<string>('DISCONNECTED')
   const [logs, setLogs] = useState<string[]>([])
@@ -21,16 +21,43 @@ export default function DebugRealtimePage() {
     console.log(message)
   }
 
+  // Função para buscar empresa_id pela chave UUID
+  const getEmpresaIdByChave = async (chave: string): Promise<number | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('empresas')
+        .select('id')
+        .eq('chave', chave)
+        .single()
+
+      if (error || !data) {
+        addLog(`❌ Empresa não encontrada para chave: ${chave}`)
+        return null
+      }
+
+      return data.id
+    } catch (error) {
+      addLog(`💥 Erro ao buscar empresa: ${error}`)
+      return null
+    }
+  }
+
   const fetchSpecificData = async () => {
     try {
-      addLog(`🔍 Buscando dados para empresa_id: ${empresaId}`)
-      const empresaIdNumber = parseEmpresaId(empresaId)
-      addLog(`🔢 Empresa ID convertido: ${empresaIdNumber}`)
+      addLog(`🔍 Buscando dados para empresa chave: ${empresaChave}`)
+      const empresaId = await getEmpresaIdByChave(empresaChave)
+      
+      if (!empresaId) {
+        addLog(`❌ Não foi possível encontrar empresa_id para a chave fornecida`)
+        return
+      }
+      
+      addLog(`🔢 Empresa ID encontrado: ${empresaId}`)
       
       const { data, error } = await supabase
         .from('aniversariantes')
         .select('*')
-        .eq('empresa_id', empresaIdNumber)
+        .eq('empresa_id', empresaId)
         .order('created_at', { ascending: false })
 
       if (error) {
@@ -77,15 +104,20 @@ export default function DebugRealtimePage() {
 
   const insertTestData = async () => {
     try {
-      addLog(`➕ Inserindo dados de teste para empresa ${empresaId}`)
-      const empresaIdNumber = parseEmpresaId(empresaId)
+      addLog(`➕ Inserindo dados de teste para empresa chave ${empresaChave}`)
+      const empresaId = await getEmpresaIdByChave(empresaChave)
+      
+      if (!empresaId) {
+        addLog(`❌ Não foi possível encontrar empresa_id para inserir dados`)
+        return
+      }
       
       const testData = {
         codigo: `TEST-${Date.now()}`,
         nome: `Teste Aniversariante ${new Date().toLocaleTimeString()}`,
         dataNascimento: '1990-01-01',
         celular: '66999999999',
-        empresa_id: empresaIdNumber,
+        empresa_id: empresaId,
         enviou_msg: false,
         mensagem: 'Teste Realtime!'
       }
@@ -110,39 +142,48 @@ export default function DebugRealtimePage() {
   }
 
   useEffect(() => {
-    const empresaIdNumber = parseEmpresaId(empresaId)
-    addLog(`🔔 Configurando Realtime para empresa_id: ${empresaIdNumber}`)
+    const setupRealtime = async () => {
+      const empresaId = await getEmpresaIdByChave(empresaChave)
+      if (!empresaId) {
+        addLog(`❌ Não foi possível configurar Realtime - empresa não encontrada`)
+        return
+      }
 
-    const subscription = supabase
-      .channel(`debug-aniversariantes-${empresaIdNumber}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'aniversariantes',
-          filter: `empresa_id=eq.${empresaIdNumber}`
-        },
-        (payload) => {
-          addLog(`🔔 Realtime evento: ${payload.eventType}`)
-          addLog(`📦 Payload: ${JSON.stringify(payload, null, 2)}`)
-          
-          // Atualizar dados após evento
-          setTimeout(() => {
-            fetchSpecificData()
-          }, 1000)
-        }
-      )
-      .subscribe((status) => {
-        addLog(`📡 Status Realtime: ${status}`)
-        setRealtimeStatus(status)
-      })
+      addLog(`🔔 Configurando Realtime para empresa_id: ${empresaId}`)
 
-    return () => {
-      addLog(`🔌 Desconectando Realtime`)
-      subscription.unsubscribe()
+      const subscription = supabase
+        .channel(`debug-aniversariantes-${empresaId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'aniversariantes',
+            filter: `empresa_id=eq.${empresaId}`
+          },
+          (payload) => {
+            addLog(`🔔 Realtime evento: ${payload.eventType}`)
+            addLog(`📦 Payload: ${JSON.stringify(payload, null, 2)}`)
+            
+            // Atualizar dados após evento
+            setTimeout(() => {
+              fetchSpecificData()
+            }, 1000)
+          }
+        )
+        .subscribe((status) => {
+          addLog(`📡 Status Realtime: ${status}`)
+          setRealtimeStatus(status)
+        })
+
+      return () => {
+        addLog(`🔌 Desconectando Realtime`)
+        subscription.unsubscribe()
+      }
     }
-  }, [empresaId])
+
+    setupRealtime()
+  }, [empresaChave])
 
   return (
     <div className="container mx-auto py-6 space-y-6">
@@ -156,11 +197,11 @@ export default function DebugRealtimePage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label>Empresa ID</Label>
+              <Label>Empresa Chave (UUID)</Label>
               <Input
-                value={empresaId}
-                onChange={(e) => setEmpresaId(e.target.value)}
-                placeholder="ID da empresa"
+                value={empresaChave}
+                onChange={(e) => setEmpresaChave(e.target.value)}
+                placeholder="UUID da empresa"
               />
             </div>
             
@@ -212,7 +253,7 @@ export default function DebugRealtimePage() {
       {/* Dados da Empresa Específica */}
       <Card>
         <CardHeader>
-          <CardTitle>Dados da Empresa {empresaId} ({data.length})</CardTitle>
+          <CardTitle>Dados da Empresa ({data.length})</CardTitle>
         </CardHeader>
         <CardContent>
           {data.length > 0 ? (
@@ -230,7 +271,7 @@ export default function DebugRealtimePage() {
               ))}
             </div>
           ) : (
-            <p className="text-gray-500">Nenhum dado encontrado para empresa {empresaId}</p>
+            <p className="text-gray-500">Nenhum dado encontrado para a empresa selecionada</p>
           )}
         </CardContent>
       </Card>
