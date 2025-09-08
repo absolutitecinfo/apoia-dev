@@ -178,6 +178,120 @@ export const api = {
     }
   },
 
+  // Listar todas as empresas disponíveis
+  async getEmpresas(): Promise<ApiResponse<Empresa[]>> {
+    try {
+      console.log('🔍 Buscando lista de empresas')
+      
+      // Verificar se as variáveis de ambiente estão configuradas
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+      
+      if (!supabaseUrl || !supabaseKey) {
+        console.warn('⚠️ Variáveis de ambiente do Supabase não configuradas, usando dados mockados')
+        const mockEmpresas: Empresa[] = [
+          {
+            id: 1,
+            created_at: new Date().toISOString(),
+            empresa: 'Empresa Teste (Mock - Sem Supabase)',
+            cnpj: '00184385000194',
+            contato: 'Contato Teste',
+            whatsapp: '66999999999',
+            chave: '14915148-1496-4762-880c-d925aecb9702',
+            ativo: true,
+            patrono: false,
+            pacote: 1
+          }
+        ]
+        return { success: true, data: mockEmpresas }
+      }
+      
+      const { data, error } = await supabase
+        .from('empresas')
+        .select('*')
+        .order('empresa', { ascending: true })
+
+      if (error) {
+        const errorInfo = {
+          code: error.code || 'UNKNOWN',
+          message: error.message || 'Erro desconhecido',
+          details: error.details || null,
+          hint: error.hint || null,
+          httpStatus: (error as any)?.status || null,
+          fullError: error
+        }
+        console.error('❌ Erro ao buscar empresas:', errorInfo)
+        
+        // Se a tabela não existe, não há dados, ou problemas de autenticação
+        if (error.code === 'PGRST116' || 
+            error.message?.includes('relation') || 
+            error.message?.includes('does not exist') ||
+            error.code === 'PGRST301' ||
+            (error as any)?.status === 401) {
+          console.log('⚠️ Problema com banco/autenticação, usando dados mockados')
+          const mockEmpresas: Empresa[] = [
+            {
+              id: 1,
+              created_at: new Date().toISOString(),
+              empresa: 'Empresa Teste (Mock - DB Error)',
+              cnpj: '00184385000194',
+              contato: 'Contato Teste',
+              whatsapp: '66999999999',
+              chave: '14915148-1496-4762-880c-d925aecb9702',
+              ativo: true,
+              patrono: false,
+              pacote: 1
+            }
+          ]
+          return { success: true, data: mockEmpresas }
+        }
+        return { success: false, error: error.message || 'Erro na consulta' }
+      }
+
+      // Se não há dados na tabela, retornar empresa padrão
+      if (!data || data.length === 0) {
+        console.log('⚠️ Nenhuma empresa encontrada na tabela, usando empresa padrão')
+        const empresaPadrao: Empresa[] = [
+          {
+            id: 1,
+            created_at: new Date().toISOString(),
+            empresa: 'Empresa Padrão (Sem dados)',
+            cnpj: '00184385000194',
+            contato: 'Contato Padrão',
+            whatsapp: '66999999999',
+            chave: '14915148-1496-4762-880c-d925aecb9702',
+            ativo: true,
+            patrono: false,
+            pacote: 1
+          }
+        ]
+        return { success: true, data: empresaPadrao }
+      }
+
+      console.log(`✅ Encontradas ${data.length} empresas`)
+      return { success: true, data }
+    } catch (error) {
+      console.error('💥 Erro inesperado ao buscar empresas:', error)
+      console.log('🔧 Retornando dados mockados devido ao erro')
+      // Em caso de erro inesperado, retorna dados mockados
+      const mockEmpresas: Empresa[] = [
+        {
+          id: 1,
+          created_at: new Date().toISOString(),
+          empresa: 'Empresa Teste (Mock - Exception)',
+          cnpj: '00184385000194',
+          contato: 'Contato Teste',
+          whatsapp: '66999999999',
+          chave: '14915148-1496-4762-880c-d925aecb9702',
+          ativo: true,
+          patrono: false,
+          pacote: 1
+        }
+      ]
+      return { success: true, data: mockEmpresas }
+    }
+  },
+
   // Aniversariantes - Buscar do Supabase
   async getAniversariantes(empresaChave: string): Promise<ApiResponse<Aniversariante[]>> {
     try {

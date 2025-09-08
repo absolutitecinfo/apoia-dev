@@ -595,62 +595,77 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
 
     console.log('🔔 Configurando Realtime para cobranças empresa chave:', empresaChave)
 
-    // Criar subscription para mudanças na tabela cobranca
-    const subscription = supabase
-      .channel(`cobranca-${empresaChave}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*', // INSERT, UPDATE, DELETE
-          schema: 'public',
-          table: 'cobranca'
-          // Nota: filtro por UUID será implementado quando tivermos a estrutura correta
-        },
-        (payload) => {
-          console.log('🔔 Mudança detectada na tabela cobranca:', payload)
-          
-          // Verificar se é uma inserção de novos dados
-          const isInsert = payload.eventType === 'INSERT'
-          const isUpdate = payload.eventType === 'UPDATE'
-          
-          // Atualizar dados automaticamente quando houver mudanças
-          setTimeout(() => {
-            console.log('🔄 Atualizando dados após mudança no Realtime...')
-            buscarCobrancasSupabase(false, true) // silentMode = true
+    let subscription: any = null
+
+    try {
+      // Criar subscription para mudanças na tabela cobranca
+      subscription = supabase
+        .channel(`cobranca-${empresaChave}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*', // INSERT, UPDATE, DELETE
+            schema: 'public',
+            table: 'cobranca'
+            // Nota: filtro por UUID será implementado quando tivermos a estrutura correta
+          },
+          (payload) => {
+            console.log('🔔 Mudança detectada na tabela cobranca:', payload)
             
-            // Fechar toast de processamento se estiver aberto
-            if (toastMessage?.includes('Processando') || toastMessage?.includes('processamento')) {
-              closeToast()
-            }
+            // Verificar se é uma inserção de novos dados
+            const isInsert = payload.eventType === 'INSERT'
+            const isUpdate = payload.eventType === 'UPDATE'
             
-            if (isInsert) {
-              showToast('✨ Novas cobranças carregadas!', 'success')
-            } else if (isUpdate) {
-              showToast('🔄 Dados atualizados!', 'info')
-            } else {
-              showToast('📝 Dados modificados!', 'info')
-            }
-          }, 500) // Pequeno delay para garantir que os dados foram persistidos
-        }
-      )
-      .subscribe((status) => {
-        console.log('📡 Status da conexão Realtime:', status)
-        
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ Conectado ao Realtime para cobranças')
-          setRealtimeConnected(true)
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Erro na conexão Realtime')
-          setRealtimeConnected(false)
-          showToast('⚠️ Falha na conexão em tempo real', 'warning')
-        }
-      })
+            // Atualizar dados automaticamente quando houver mudanças
+            setTimeout(() => {
+              console.log('🔄 Atualizando dados após mudança no Realtime...')
+              buscarCobrancasSupabase(false, true) // silentMode = true
+              
+              // Fechar toast de processamento se estiver aberto
+              if (toastMessage?.includes('Processando') || toastMessage?.includes('processamento')) {
+                closeToast()
+              }
+              
+              if (isInsert) {
+                showToast('✨ Novas cobranças carregadas!', 'success')
+              } else if (isUpdate) {
+                showToast('🔄 Dados atualizados!', 'info')
+              } else {
+                showToast('📝 Dados modificados!', 'info')
+              }
+            }, 500) // Pequeno delay para garantir que os dados foram persistidos
+          }
+        )
+        .subscribe((status) => {
+          console.log('📡 Status da conexão Realtime cobranças:', status)
+          
+          if (status === 'SUBSCRIBED') {
+            console.log('✅ Conectado ao Realtime para cobranças')
+            setRealtimeConnected(true)
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            console.warn('⚠️ Problema na conexão Realtime cobranças:', status)
+            setRealtimeConnected(false)
+            // Não mostrar toast para evitar spam - apenas log
+            console.log('💡 Realtime desabilitado temporariamente. Dados ainda serão atualizados manualmente.')
+          }
+        })
+    } catch (error) {
+      console.warn('⚠️ Erro ao configurar Realtime cobranças (modo fallback ativo):', error)
+      setRealtimeConnected(false)
+      // Não mostrar erro ao usuário, apenas continuar sem realtime
+    }
 
     // Cleanup: remover subscription quando componente for desmontado
     return () => {
-      console.log('🔌 Desconectando Realtime subscription')
+      console.log('🔌 Desconectando Realtime subscription cobranças')
       setRealtimeConnected(false)
-      subscription.unsubscribe()
+      if (subscription) {
+        try {
+          subscription.unsubscribe()
+        } catch (error) {
+          console.warn('⚠️ Erro ao desconectar subscription cobranças:', error)
+        }
+      }
     }
   }, [empresaChave]) // Recriar subscription se empresaChave mudar
 
