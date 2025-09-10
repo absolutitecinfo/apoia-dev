@@ -13,7 +13,7 @@ import { Calendar, Search, Send, RefreshCw, MessageSquare, Users, X, CheckCircle
 import { api } from "@/lib/api"
 
 import { supabase } from "@/lib/supabase"
-import type { Aniversariante } from "@/lib/types"
+import type { Aniversariante, Empresa } from "@/lib/types"
 
 interface AniversariantesTabProps {
   empresaChave: string
@@ -22,6 +22,7 @@ interface AniversariantesTabProps {
 
 export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesTabProps) {
   const [aniversariantes, setAniversariantes] = useState<Aniversariante[]>([])
+  const [empresaAtual, setEmpresaAtual] = useState<Empresa | null>(null)
   const [loadingColeta, setLoadingColeta] = useState(false)
   const [loadingEnvio, setLoadingEnvio] = useState(false)
   const [loadingIndividual, setLoadingIndividual] = useState<number | null>(null)
@@ -61,6 +62,25 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
     setToastMessage(null)
   }
 
+  // Função para buscar dados da empresa atual
+  const buscarEmpresaAtual = async () => {
+    try {
+      console.log('🏢 Buscando dados da empresa para chave:', empresaChave)
+      const result = await api.getEmpresaData(empresaChave)
+      
+      if (result.success && result.data) {
+        setEmpresaAtual(result.data)
+        console.log('✅ Empresa carregada:', result.data)
+      } else {
+        console.error('❌ Erro ao buscar empresa:', result.error)
+        showToast(`Erro ao carregar dados da empresa: ${result.error}`, 'error')
+      }
+    } catch (error) {
+      console.error('💥 Erro inesperado ao buscar empresa:', error)
+      showToast("Erro ao carregar dados da empresa", 'error')
+    }
+  }
+
   // Função para processar variáveis na mensagem
   const processarMensagem = (mensagem: string, aniversariante: Aniversariante): string => {
     if (!mensagem) return mensagem
@@ -76,10 +96,15 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
 
   // Função para buscar aniversariantes (1ª chamada)
   const coletarAniversariantes = async () => {
+    if (!empresaAtual?.cnpj) {
+      showToast("CNPJ da empresa não encontrado. Aguarde o carregamento dos dados.", 'warning')
+      return
+    }
+
     setLoadingColeta(true)
     try {
-      console.log('🚀 Iniciando coleta de aniversariantes...')
-      const result = await api.coletarAniversariantes("00184385000194", dataInicial, dataFinal)
+      console.log('🚀 Iniciando coleta de aniversariantes para CNPJ:', empresaAtual.cnpj)
+      const result = await api.coletarAniversariantes(empresaAtual.cnpj, dataInicial, dataFinal)
       
       if (result.success) {
         console.log('✅ Webhook chamado com sucesso:', result.data)
@@ -226,6 +251,11 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
 
   // Função para enviar mensagens (2ª chamada)
   const enviarMensagens = async () => {
+    if (!empresaAtual?.cnpj) {
+      showToast("CNPJ da empresa não encontrado. Aguarde o carregamento dos dados.", 'warning')
+      return
+    }
+
     setLoadingEnvio(true)
     try {
       // Filtra apenas aniversariantes que não foram enviados E que estão selecionados
@@ -246,7 +276,7 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
       }
 
       // Chama o webhook para envio das mensagens
-      const result = await api.enviarMensagensAniversariantes("00184385000194", aniversariantesParaEnvio)
+      const result = await api.enviarMensagensAniversariantes(empresaAtual.cnpj, aniversariantesParaEnvio)
       
       if (result.success) {
         showToast(`🎉 ${aniversariantesParaEnvio.length} mensagens enviadas e removidas da lista!`, 'success')
@@ -290,6 +320,11 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
 
   // Função para enviar mensagem individual
   const enviarMensagemIndividual = async (aniversariante: Aniversariante) => {
+    if (!empresaAtual?.cnpj) {
+      showToast("CNPJ da empresa não encontrado. Aguarde o carregamento dos dados.", 'warning')
+      return
+    }
+
     setLoadingIndividual(aniversariante.id)
     try {
       const mensagemBase = aniversariante.mensagem || mensagemPadrao
@@ -300,7 +335,7 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
         mensagem: mensagemProcessada
       }
 
-      const result = await api.enviarMensagensAniversariantes("00184385000194", [aniversarianteComMensagem])
+      const result = await api.enviarMensagensAniversariantes(empresaAtual.cnpj, [aniversarianteComMensagem])
       
       if (result.success) {
         // Atualiza o status no Supabase
@@ -498,9 +533,10 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
       (a.celular?.includes(searchTerm) || false)
     )
 
-  // Carregar dados automaticamente ao inicializar
+  // Carregar dados da empresa e aniversariantes automaticamente ao inicializar
   useEffect(() => {
     if (empresaChave) {
+      buscarEmpresaAtual()
       buscarAniversariantesSupabase()
     }
   }, [empresaChave])
@@ -755,6 +791,16 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
           <CardTitle>Coletar Aniversariantes</CardTitle>
           <CardDescription>
             Defina o período e solicite a coleta de aniversariantes
+            {empresaAtual && (
+              <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                <div className="text-sm">
+                  <strong>Empresa:</strong> {empresaAtual.empresa}
+                </div>
+                <div className="text-sm">
+                  <strong>CNPJ:</strong> {empresaAtual.cnpj}
+                </div>
+              </div>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -779,7 +825,7 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
             </div>
             <Button 
               onClick={coletarAniversariantes}
-              disabled={loadingColeta || toastMessage?.includes('Processando')}
+              disabled={loadingColeta || toastMessage?.includes('Processando') || !empresaAtual?.cnpj}
               className="flex items-center gap-2"
             >
               {loadingColeta || toastMessage?.includes('Processando') ? (
@@ -789,6 +835,7 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
               )}
               {loadingColeta ? "Enviando solicitação..." : 
                toastMessage?.includes('Processando') ? "Processando..." : 
+               !empresaAtual?.cnpj ? "Aguardando dados da empresa..." :
                "Coletar Aniversariantes"}
             </Button>
                         <Button 

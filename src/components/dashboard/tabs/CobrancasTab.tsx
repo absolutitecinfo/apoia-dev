@@ -14,7 +14,7 @@ import { DollarSign, Search, Send, RefreshCw, AlertTriangle, Users, X, CheckCirc
 import { api } from "@/lib/api"
 
 import { supabase } from "@/lib/supabase"
-import type { Cobranca } from "@/lib/types"
+import type { Cobranca, Empresa } from "@/lib/types"
 
 interface CobrancasTabProps {
   empresaChave: string
@@ -23,6 +23,7 @@ interface CobrancasTabProps {
 
 export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
   const [cobrancas, setCobrancas] = useState<Cobranca[]>([])
+  const [empresaAtual, setEmpresaAtual] = useState<Empresa | null>(null)
   const [loadingColeta, setLoadingColeta] = useState(false)
   const [loadingEnvio, setLoadingEnvio] = useState(false)
   const [loadingIndividual, setLoadingIndividual] = useState<string | null>(null)
@@ -61,6 +62,25 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
   // Função para fechar toast manualmente
   const closeToast = () => {
     setToastMessage(null)
+  }
+
+  // Função para buscar dados da empresa atual
+  const buscarEmpresaAtual = async () => {
+    try {
+      console.log('🏢 Buscando dados da empresa para chave:', empresaChave)
+      const result = await api.getEmpresaData(empresaChave)
+      
+      if (result.success && result.data) {
+        setEmpresaAtual(result.data)
+        console.log('✅ Empresa carregada:', result.data)
+      } else {
+        console.error('❌ Erro ao buscar empresa:', result.error)
+        showToast(`Erro ao carregar dados da empresa: ${result.error}`, 'error')
+      }
+    } catch (error) {
+      console.error('💥 Erro inesperado ao buscar empresa:', error)
+      showToast("Erro ao carregar dados da empresa", 'error')
+    }
   }
 
   // Função para processar variáveis na mensagem
@@ -134,9 +154,14 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
 
   // Função para buscar cobranças (1ª chamada)
   const coletarCobrancas = async () => {
+    if (!empresaAtual?.cnpj) {
+      showToast("CNPJ da empresa não encontrado. Aguarde o carregamento dos dados.", 'warning')
+      return
+    }
+
     setLoadingColeta(true)
     try {
-      console.log('🚀 Iniciando coleta de cobranças...')
+      console.log('🚀 Iniciando coleta de cobranças para CNPJ:', empresaAtual.cnpj)
       
       // Se for período customizado, limpar cache local primeiro
       if (tipoCobranca === 'custom') {
@@ -146,7 +171,7 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
         showToast("🧹 Cache limpo para nova consulta personalizada", 'info')
       }
       
-      const result = await api.coletarCobrancas("00184385000194", tipoCobranca, dataInicial, dataFinal)
+      const result = await api.coletarCobrancas(empresaAtual.cnpj, tipoCobranca, dataInicial, dataFinal)
       
       if (result.success) {
         console.log('✅ Webhook chamado com sucesso:', result.data)
@@ -285,6 +310,11 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
 
   // Função para enviar mensagens (2ª chamada)
   const enviarMensagens = async () => {
+    if (!empresaAtual?.cnpj) {
+      showToast("CNPJ da empresa não encontrado. Aguarde o carregamento dos dados.", 'warning')
+      return
+    }
+
     setLoadingEnvio(true)
     try {
       // Filtra apenas cobranças que não foram enviadas E que estão selecionadas
@@ -329,7 +359,7 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
       }
 
       // Chama o webhook para envio das mensagens
-      const result = await api.enviarMensagensCobrancas("00184385000194", cobrancasParaEnvio)
+      const result = await api.enviarMensagensCobrancas(empresaAtual.cnpj, cobrancasParaEnvio)
       
       if (result.success) {
         showToast(`🎉 ${cobrancasParaEnvio.length} mensagens de cobrança enviadas e removidas da lista!`, 'success')
@@ -385,6 +415,11 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
 
   // Função para enviar mensagem individual
   const enviarMensagemIndividual = async (cobranca: Cobranca) => {
+    if (!empresaAtual?.cnpj) {
+      showToast("CNPJ da empresa não encontrado. Aguarde o carregamento dos dados.", 'warning')
+      return
+    }
+
     setLoadingIndividual(cobranca.id)
     try {
       // Verificar se há um número válido para envio
@@ -406,7 +441,7 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
         whatsapp: numeroParaEnvio
       }
 
-      const result = await api.enviarMensagensCobrancas("00184385000194", [cobrancaComMensagem])
+      const result = await api.enviarMensagensCobrancas(empresaAtual.cnpj, [cobrancaComMensagem])
       
       if (result.success) {
         // Atualiza o status no Supabase
@@ -558,9 +593,10 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
       (c.whatsapp?.includes(searchTerm) || false)
     )
 
-  // Carregar dados automaticamente ao inicializar
+  // Carregar dados da empresa e cobranças automaticamente ao inicializar
   useEffect(() => {
     if (empresaChave) {
+      buscarEmpresaAtual()
       buscarCobrancasSupabase()
     }
   }, [empresaChave])
@@ -827,6 +863,16 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
             <CardTitle>Coletar Cobranças</CardTitle>
             <CardDescription>
               Selecione o tipo de cobrança e período para coleta
+              {empresaAtual && (
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                  <div className="text-sm">
+                    <strong>Empresa:</strong> {empresaAtual.empresa}
+                  </div>
+                  <div className="text-sm">
+                    <strong>CNPJ:</strong> {empresaAtual.cnpj}
+                  </div>
+                </div>
+              )}
               {tipoCobranca === 'custom' && (
                 <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
                   <div className="text-sm text-blue-700">
@@ -878,7 +924,7 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
               
               <Button 
                 onClick={coletarCobrancas}
-                disabled={loadingColeta || toastMessage?.includes('Processando')}
+                disabled={loadingColeta || toastMessage?.includes('Processando') || !empresaAtual?.cnpj}
                 className="flex items-center gap-2"
               >
                 {loadingColeta || toastMessage?.includes('Processando') ? (
@@ -887,7 +933,8 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
                   <DollarSign className="h-4 w-4" />
                 )}
                 {loadingColeta ? "Enviando solicitação..." : 
-                 toastMessage?.includes('Processando') ? "Processando..." : 
+                 toastMessage?.includes('Processando') ? "Processando..." :
+                 !empresaAtual?.cnpj ? "Aguardando dados da empresa..." : 
                  "Coletar Cobranças"}
               </Button>
               
