@@ -4,10 +4,7 @@ import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Building2 } from "lucide-react"
-import { api } from "@/lib/api"
-import type { Empresa } from "@/lib/types"
 
 // Importando as abas
 import { AniversariantesTab } from "@/components/dashboard/tabs/AniversariantesTab"
@@ -19,8 +16,6 @@ const EMPRESA_CHAVE_PADRAO = "14915148-1496-4762-880c-d925aecb9702"
 export default function DashboardContent() {
   const [isLoading, setIsLoading] = useState(true)
   const [empresaChave, setEmpresaChave] = useState<string>(EMPRESA_CHAVE_PADRAO)
-  const [empresas, setEmpresas] = useState<Empresa[]>([])
-  const [loadingEmpresas, setLoadingEmpresas] = useState(false)
 
   const searchParams = useSearchParams()
 
@@ -36,38 +31,6 @@ export default function DashboardContent() {
     }
   }, [searchParams])
 
-  // Carregar lista de empresas disponíveis
-  useEffect(() => {
-    const carregarEmpresas = async () => {
-      setLoadingEmpresas(true)
-      try {
-        const resultado = await api.getEmpresas()
-        if (resultado.success && resultado.data) {
-          setEmpresas(resultado.data)
-          console.log('✅ Empresas carregadas:', resultado.data.length)
-        } else {
-          console.error('❌ Erro ao carregar empresas:', resultado.error)
-        }
-      } catch (error) {
-        console.error('💥 Erro inesperado ao carregar empresas:', error)
-      } finally {
-        setLoadingEmpresas(false)
-      }
-    }
-
-    carregarEmpresas()
-  }, [])
-
-  // Função para trocar empresa
-  const handleEmpresaChange = (novaChave: string) => {
-    console.log('🔄 Trocando empresa para chave:', novaChave)
-    setEmpresaChave(novaChave)
-    
-    // Opcional: atualizar URL para persistir a seleção
-    const url = new URL(window.location.href)
-    url.searchParams.set('chave', novaChave)
-    window.history.replaceState({}, '', url.toString())
-  }
 
 
   useEffect(() => {
@@ -92,30 +55,12 @@ export default function DashboardContent() {
               </div>
             </div>
             <div className="flex items-center gap-4">
-              {/* Dropdown de seleção de empresa */}
+              {/* Informações da empresa atual */}
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-muted-foreground">Empresa:</span>
-                <Select 
-                  value={empresaChave} 
-                  onValueChange={handleEmpresaChange}
-                  disabled={loadingEmpresas}
-                >
-                  <SelectTrigger className="w-[280px]">
-                    <SelectValue placeholder={loadingEmpresas ? "Carregando empresas..." : "Selecione uma empresa"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {empresas.map((empresa) => (
-                      <SelectItem key={empresa.chave || empresa.id} value={empresa.chave || ''}>
-                        <div className="flex flex-col">
-                          <span className="font-medium">{empresa.empresa || 'Empresa sem nome'}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {empresa.cnpj} • {empresa.chave?.substring(0, 8)}...
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Building2 className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium text-muted-foreground">
+                  Empresa: {empresaChave.substring(0, 8)}...
+                </span>
               </div>
               
               {/* Status do sistema */}

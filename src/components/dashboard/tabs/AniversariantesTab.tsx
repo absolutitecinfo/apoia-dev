@@ -28,8 +28,8 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
   const [loadingIndividual, setLoadingIndividual] = useState<number | null>(null)
   const [loadingRefresh, setLoadingRefresh] = useState(false)
   const [realtimeConnected, setRealtimeConnected] = useState(false)
-  const [dataInicial, setDataInicial] = useState(new Date().toISOString().split('T')[0])
-  const [dataFinal, setDataFinal] = useState(new Date().toISOString().split('T')[0])
+  const [dataInicial, setDataInicial] = useState('2025-01-01')
+  const [dataFinal, setDataFinal] = useState('2025-12-31')
   const [mensagemPadrao, setMensagemPadrao] = useState("Feliz aniversário, [nome]! 🎉")
   const [searchTerm, setSearchTerm] = useState("")
   
@@ -45,7 +45,6 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
 
   // Função para toast melhorada
   const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info', autoHide: boolean = true) => {
-    console.log(`${type.toUpperCase()}: ${message}`)
     setToastMessage(message)
     setToastType(type)
     
@@ -65,18 +64,14 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
   // Função para buscar dados da empresa atual
   const buscarEmpresaAtual = async () => {
     try {
-      console.log('🏢 Buscando dados da empresa para chave:', empresaChave)
       const result = await api.getEmpresaData(empresaChave)
       
       if (result.success && result.data) {
         setEmpresaAtual(result.data)
-        console.log('✅ Empresa carregada:', result.data)
       } else {
-        console.error('❌ Erro ao buscar empresa:', result.error)
         showToast(`Erro ao carregar dados da empresa: ${result.error}`, 'error')
       }
     } catch (error) {
-      console.error('💥 Erro inesperado ao buscar empresa:', error)
       showToast("Erro ao carregar dados da empresa", 'error')
     }
   }
@@ -101,28 +96,36 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
       return
     }
 
+
     setLoadingColeta(true)
     try {
-      console.log('🚀 Iniciando coleta de aniversariantes para CNPJ:', empresaAtual.cnpj)
-      const result = await api.coletarAniversariantes(empresaAtual.cnpj, dataInicial, dataFinal)
+      const result = await api.coletarAniversariantes(empresaAtual.cnpj, dataInicial, dataFinal, empresaAtual.nome_sistema || '')
       
       if (result.success) {
-        console.log('✅ Webhook chamado com sucesso:', result.data)
         showToast("🔄 Processando... Os dados aparecerão automaticamente quando prontos.", 'info', false)
+        
+        // Verificação automática após 3 segundos
+        setTimeout(() => {
+          console.log('🔄 Verificação automática após webhook...')
+          buscarAniversariantesSupabase(false, true) // silentMode = true
+        }, 3000)
+        
+        // Verificação automática após 8 segundos
+        setTimeout(() => {
+          console.log('🔄 Segunda verificação automática...')
+          buscarAniversariantesSupabase(false, true) // silentMode = true
+        }, 8000)
         
         // Aguardar um tempo para ver se chegam dados via realtime
         setTimeout(() => {
-          // Se ainda estiver carregando após 10 segundos, mostrar aviso
           if (loadingColeta) {
             showToast("⏳ Processamento pode demorar alguns minutos. Os dados aparecerão automaticamente.", 'warning')
           }
         }, 10000)
       } else {
-        console.error('❌ Erro no webhook:', result.error)
         showToast(`Erro: ${result.error}`, 'error')
       }
     } catch (error) {
-      console.error('💥 Erro na comunicação:', error)
       showToast("Erro na comunicação com o webhook", 'error')
     } finally {
       setLoadingColeta(false)
@@ -133,18 +136,7 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
   const buscarAniversariantesSupabase = async (showLoadingState = false, silentMode = false) => {
     if (showLoadingState) setLoadingRefresh(true)
     try {
-      console.log('🔄 Iniciando busca de aniversariantes para empresa chave:', empresaChave)
-      
-      // Debug: primeiro vamos ver quantos registros existem na tabela total
-      const debugResult = await supabase
-        .from('aniversariantes')
-        .select('empresa_id, id, nome')
-        .limit(10)
-      console.log('🗂️ Debug - primeiros 10 registros da tabela:', debugResult.data)
-      
       const result = await api.getAniversariantes(empresaChave)
-      
-      console.log('📋 Resultado completo da API:', result)
       
       if (result.success && result.data) {
         setAniversariantes(result.data)
@@ -160,14 +152,11 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
         
         if (isMockData) {
           if (!silentMode) showToast(`${result.data.length} aniversariantes carregados (dados de teste)`, 'info')
-          console.log('⚠️ Dados mockados carregados:', result.data)
         } else {
           if (!silentMode) showToast(`${result.data.length} aniversariantes carregados do banco`, 'success')
-          console.log('✅ Dados reais carregados:', result.data)
         }
       } else if (result.success && (!result.data || result.data.length === 0)) {
         // Se não encontrou dados para a empresa específica, tenta buscar TODOS os dados
-        console.log('⚠️ Nenhum dado encontrado para empresa específica, buscando todos...')
         try {
           const { data: todosOsDados, error: errorTodos } = await supabase
             .from('aniversariantes')
@@ -176,69 +165,19 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
             .limit(20)
           
           if (todosOsDados && todosOsDados.length > 0) {
-            console.log('📋 Dados encontrados na tabela (mostrando todos):', todosOsDados)
             setAniversariantes(todosOsDados)
             if (!silentMode) showToast(`${todosOsDados.length} aniversariantes encontrados (todos da tabela)`, 'warning')
-            
-            // Mostrar quais empresas têm dados
-            const empresas = todosOsDados.reduce((acc: any, item) => {
-              acc[item.empresa_id] = (acc[item.empresa_id] || 0) + 1
-              return acc
-            }, {})
-            console.log('📊 Dados por empresa:', empresas)
           } else {
-            console.log('❌ Tabela está vazia')
             setAniversariantes([])
           }
         } catch (error) {
           console.error('Erro ao buscar todos os dados:', error)
         }
       } else {
-        console.error('❌ Erro da API:', result.error)
         showToast(`Erro ao buscar aniversariantes: ${result.error || 'Erro desconhecido'}`, 'error')
-        
-        // Em caso de erro, pelo menos carrega dados mockados para teste
-        const mockData = [
-          {
-            id: 999,
-            created_at: new Date().toISOString(),
-            codigo: 'FALLBACK01',
-            nome: 'Aniversariante de Emergência',
-            dataNascimento: '1990-06-15',
-            telefone: null,
-            celular: '66999999999',
-            empresa_id: 1,
-            enviou_msg: false,
-            mensagem: 'Feliz aniversário! 🎉',
-            whatsapp_msg: null,
-            data_envio: null
-          }
-        ]
-        setAniversariantes(mockData)
-        if (!silentMode) showToast('Carregados dados de fallback para teste', 'warning')
       }
     } catch (error) {
-      console.error('💥 Erro inesperado:', error)
-      if (!silentMode) showToast("Erro crítico - usando dados de emergência", 'error')
-      
-      // Dados de emergência em caso de erro crítico
-      const emergencyData = [
-        {
-          id: 888,
-          created_at: new Date().toISOString(),
-          codigo: 'EMERGENCY01',
-          nome: 'Dados de Emergência',
-          dataNascimento: '1990-06-15',
-          telefone: null,
-          celular: '66999999999',
-          empresa_id: 1,
-          enviou_msg: false,
-          mensagem: 'Feliz aniversário! 🎉',
-          whatsapp_msg: null,
-          data_envio: null
-        }
-      ]
-      setAniversariantes(emergencyData)
+      if (!silentMode) showToast("Erro crítico ao buscar dados", 'error')
     } finally {
       if (showLoadingState) setLoadingRefresh(false)
     }
@@ -276,7 +215,7 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
       }
 
       // Chama o webhook para envio das mensagens
-      const result = await api.enviarMensagensAniversariantes(empresaAtual.cnpj, aniversariantesParaEnvio)
+      const result = await api.enviarMensagensAniversariantes(empresaAtual.cnpj, aniversariantesParaEnvio, empresaAtual.nome_sistema || '')
       
       if (result.success) {
         showToast(`🎉 ${aniversariantesParaEnvio.length} mensagens enviadas e removidas da lista!`, 'success')
@@ -335,7 +274,7 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
         mensagem: mensagemProcessada
       }
 
-      const result = await api.enviarMensagensAniversariantes(empresaAtual.cnpj, [aniversarianteComMensagem])
+      const result = await api.enviarMensagensAniversariantes(empresaAtual.cnpj, [aniversarianteComMensagem], empresaAtual.nome_sistema || '')
       
       if (result.success) {
         // Atualiza o status no Supabase
@@ -372,7 +311,6 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
   // Função para excluir aniversariante da lista e do banco
   const excluirAniversariante = async (id: number) => {
     try {
-      console.log('🗑️ Excluindo aniversariante ID:', id)
       
       // Excluir do banco de dados
       const { error } = await supabase
@@ -394,11 +332,9 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
         return newSet
       })
       
-      console.log('✅ Aniversariante excluído com sucesso')
       showToast("Aniversariante excluído permanentemente", 'success')
       
     } catch (error) {
-      console.error('💥 Erro inesperado ao excluir:', error)
       showToast("Erro inesperado ao excluir aniversariante", 'error')
     }
   }
@@ -451,7 +387,6 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
     if (!confirmacao) return
 
     try {
-      console.log('🗑️ Excluindo aniversariantes selecionados:', selecionados)
       
       // Excluir todos do banco de dados
       const { error } = await supabase
@@ -469,11 +404,9 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
       setAniversariantes(prev => prev.filter(a => !selecionados.includes(a.id)))
       setAniversariantesSelecionados(new Set())
       
-      console.log('✅ Aniversariantes excluídos com sucesso')
       showToast(`${selecionados.length} aniversariante(s) excluído(s) permanentemente`, 'success')
       
     } catch (error) {
-      console.error('💥 Erro inesperado ao excluir:', error)
       showToast("Erro inesperado ao excluir aniversariantes", 'error')
     }
   }
@@ -528,10 +461,19 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
   // Filtrar aniversariantes por busca e status de envio
   const aniversariantesFiltrados = aniversariantes
     .filter(a => !a.enviou_msg) // Só mostra os que ainda não foram enviados
-    .filter(a =>
-      (a.nome?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-      (a.celular?.includes(searchTerm) || false)
-    )
+    .filter(a => {
+      // Se não há termo de busca, mostrar todos
+      if (!searchTerm || searchTerm.trim() === '') {
+        return true
+      }
+      
+      // Verificar se o nome ou celular contém o termo de busca
+      const nomeMatch = a.nome?.toLowerCase().includes(searchTerm.toLowerCase()) || false
+      const celularMatch = a.celular?.includes(searchTerm) || false
+      
+      return nomeMatch || celularMatch
+    })
+
 
   // Carregar dados da empresa e aniversariantes automaticamente ao inicializar
   useEffect(() => {
@@ -559,19 +501,19 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
   // Monitorar mudanças na lista de aniversariantes para fechar toast de processamento
   useEffect(() => {
     if (aniversariantes.length > 0 && toastMessage?.includes('Processando')) {
-      console.log('✅ Dados carregados, fechando toast de processamento')
       closeToast()
       showToast(`✨ ${aniversariantes.length} aniversariantes carregados com sucesso!`, 'success')
     }
   }, [aniversariantes.length, toastMessage])
 
-  // Realtime subscription para aniversariantes
+  // Realtime subscription para aniversariantes + Polling de backup
   useEffect(() => {
     if (!empresaChave) return
 
-    console.log('🔔 Configurando Realtime para empresa chave:', empresaChave)
+    console.log('🔔 Configurando Realtime para aniversariantes empresa chave:', empresaChave)
 
     let subscription: any = null
+    let pollingInterval: NodeJS.Timeout | null = null
 
     try {
       // Criar subscription para mudanças na tabela aniversariantes
@@ -591,6 +533,7 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
             // Verificar se é uma inserção de novos dados
             const isInsert = payload.eventType === 'INSERT'
             const isUpdate = payload.eventType === 'UPDATE'
+            const isDelete = payload.eventType === 'DELETE'
             
             // Atualizar dados automaticamente quando houver mudanças
             setTimeout(() => {
@@ -606,6 +549,8 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
                 showToast('✨ Novos aniversariantes carregados!', 'success')
               } else if (isUpdate) {
                 showToast('🔄 Dados atualizados!', 'info')
+              } else if (isDelete) {
+                showToast('🗑️ Dados removidos!', 'info')
               } else {
                 showToast('📝 Dados modificados!', 'info')
               }
@@ -613,35 +558,59 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
           }
         )
         .subscribe((status) => {
-          console.log('📡 Status da conexão Realtime:', status)
+          console.log('📡 Status da conexão Realtime aniversariantes:', status)
           
           if (status === 'SUBSCRIBED') {
             console.log('✅ Conectado ao Realtime para aniversariantes')
             setRealtimeConnected(true)
-            // Removendo toast chato - apenas log no console
+            // Se Realtime funcionou, não precisa do polling
+            if (pollingInterval) {
+              clearInterval(pollingInterval)
+              pollingInterval = null
+            }
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-            console.warn('⚠️ Problema na conexão Realtime:', status)
+            console.warn('⚠️ Problema na conexão Realtime aniversariantes:', status)
             setRealtimeConnected(false)
-            // Não mostrar toast para evitar spam - apenas log
-            console.log('💡 Realtime desabilitado temporariamente. Dados ainda serão atualizados manualmente.')
+            
+            // Se Realtime falhou, ativar polling de backup
+            if (!pollingInterval) {
+              console.log('🔄 Ativando polling de backup para aniversariantes...')
+              pollingInterval = setInterval(() => {
+                console.log('🔄 Polling: Verificando mudanças na tabela aniversariantes...')
+                buscarAniversariantesSupabase(false, true) // silentMode = true
+              }, 3000) // Verificar a cada 3 segundos
+            }
           }
         })
     } catch (error) {
-      console.warn('⚠️ Erro ao configurar Realtime (modo fallback ativo):', error)
+      console.warn('⚠️ Erro ao configurar Realtime aniversariantes (modo fallback ativo):', error)
       setRealtimeConnected(false)
-      // Não mostrar erro ao usuário, apenas continuar sem realtime
+      
+      // Se Realtime falhou completamente, ativar polling
+      if (!pollingInterval) {
+        console.log('🔄 Ativando polling de backup para aniversariantes...')
+        pollingInterval = setInterval(() => {
+          console.log('🔄 Polling: Verificando mudanças na tabela aniversariantes...')
+          buscarAniversariantesSupabase(false, true) // silentMode = true
+        }, 3000) // Verificar a cada 3 segundos
+      }
     }
 
-    // Cleanup: remover subscription quando componente for desmontado
+    // Cleanup: remover subscription e polling quando componente for desmontado
     return () => {
-      console.log('🔌 Desconectando Realtime subscription')
+      console.log('🔌 Desconectando Realtime subscription e polling aniversariantes')
       setRealtimeConnected(false)
+      
       if (subscription) {
         try {
           subscription.unsubscribe()
         } catch (error) {
-          console.warn('⚠️ Erro ao desconectar subscription:', error)
+          console.warn('⚠️ Erro ao desconectar subscription aniversariantes:', error)
         }
+      }
+      
+      if (pollingInterval) {
+        clearInterval(pollingInterval)
       }
     }
   }, [empresaChave]) // Recriar subscription se empresaChave mudar
@@ -944,13 +913,22 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Buscar por nome ou telefone..."
-              className="pl-8"
+              className="pl-8 pr-8"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2 top-2.5 h-4 w-4 text-muted-foreground hover:text-gray-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
+
           {aniversariantesFiltrados.length > 0 ? (
             <>
               {/* Controles de seleção */}

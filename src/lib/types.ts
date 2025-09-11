@@ -11,6 +11,7 @@ export interface Empresa {
   ativo: boolean | null
   patrono: boolean | null
   pacote: number | null
+  nome_sistema: string | null
 }
 
 export interface Aniversariante {
@@ -114,12 +115,14 @@ export interface WebhookAniversariantesRequest {
   comando: "aniversariantes"
   data_inicial: string
   data_final: string
+  nomeSistema: string
 }
 
 export interface WebhookAniversariantesEnvioRequest {
   cnpj: string
   comando: "mensagem_aniversariantes"
   aniversariantes: Aniversariante[]
+  nomeSistema: string
 }
 
 export interface WebhookCobrancaRequest {
@@ -127,12 +130,14 @@ export interface WebhookCobrancaRequest {
   comando: "cobrancas"
   data_inicial?: string
   data_final?: string
+  nomeSistema: string
 }
 
 export interface WebhookCobrancaEnvioRequest {
   cnpj: string
   comando: "mensagem_cobrancas"
   cobrancas: Cobranca[]
+  nomeSistema: string
 }
 
 // Interface genérica para respostas da API
@@ -152,4 +157,4 @@ export interface DashboardMetrics {
   cobrancasPendentes: number
   valorTotalCobrancas: number
   valorCobrancasVencidas: number
-} 
+}

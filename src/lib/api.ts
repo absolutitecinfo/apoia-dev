@@ -28,18 +28,18 @@ async function getEmpresaIdByChave(chave: string): Promise<number | null> {
   try {
     const { data, error } = await supabase
       .from('empresas')
-      .select('id')
+      .select('id, empresa, cnpj')
       .eq('chave', chave)
       .single()
 
     if (error || !data) {
-      console.error('Erro ao buscar empresa por chave:', error)
+      console.error('❌ Erro ao buscar empresa por chave:', error)
       return null
     }
 
     return data.id
   } catch (error) {
-    console.error('Erro inesperado ao buscar empresa por chave:', error)
+    console.error('💥 Erro inesperado ao buscar empresa por chave:', error)
     return null
   }
 }
@@ -73,19 +73,17 @@ export const api = {
           chave: empresaChave,
           ativo: true,
           patrono: false,
-          pacote: 1
+          pacote: 1,
+          nome_sistema: 'ECOCENTAURO ACCESS'
         }
         return { success: true, data: mockEmpresa }
       }
       
-      console.log('🔗 Executando consulta Supabase para empresa chave:', empresaChave)
       const { data, error } = await supabase
         .from('empresas')
         .select('*')
         .eq('chave', empresaChave)
         .single()
-
-      console.log('📊 Resultado da consulta empresa:', { data, error })
 
       if (error) {
         const errorInfo = {
@@ -115,7 +113,8 @@ export const api = {
             chave: empresaChave,
             ativo: true,
             patrono: false,
-            pacote: 1
+            pacote: 1,
+            nome_sistema: 'ECOCENTAURO ACCESS'
           }
           return { success: true, data: mockEmpresa }
         }
@@ -136,7 +135,8 @@ export const api = {
         chave: empresaChave,
         ativo: true,
         patrono: false,
-        pacote: 1
+        pacote: 1,
+        nome_sistema: 'ECOCENTAURO ACCESS'
       }
       return { success: true, data: mockEmpresa }
     }
@@ -200,7 +200,8 @@ export const api = {
             chave: '14915148-1496-4762-880c-d925aecb9702',
             ativo: true,
             patrono: false,
-            pacote: 1
+            pacote: 1,
+            nome_sistema: 'ECOCENTAURO ACCESS'
           }
         ]
         return { success: true, data: mockEmpresas }
@@ -240,7 +241,8 @@ export const api = {
               chave: '14915148-1496-4762-880c-d925aecb9702',
               ativo: true,
               patrono: false,
-              pacote: 1
+              pacote: 1,
+              nome_sistema: 'ECOCENTAURO ACCESS'
             }
           ]
           return { success: true, data: mockEmpresas }
@@ -262,7 +264,8 @@ export const api = {
             chave: '14915148-1496-4762-880c-d925aecb9702',
             ativo: true,
             patrono: false,
-            pacote: 1
+            pacote: 1,
+            nome_sistema: 'ECOCENTAURO ACCESS'
           }
         ]
         return { success: true, data: empresaPadrao }
@@ -285,7 +288,8 @@ export const api = {
           chave: '14915148-1496-4762-880c-d925aecb9702',
           ativo: true,
           patrono: false,
-          pacote: 1
+          pacote: 1,
+          nome_sistema: 'ECOCENTAURO ACCESS'
         }
       ]
       return { success: true, data: mockEmpresas }
@@ -295,188 +299,29 @@ export const api = {
   // Aniversariantes - Buscar do Supabase
   async getAniversariantes(empresaChave: string): Promise<ApiResponse<Aniversariante[]>> {
     try {
-      console.log('🔍 Buscando aniversariantes para empresa chave:', empresaChave)
-      
-      // Buscar o ID numérico da empresa pela chave
-      const empresaId = await getEmpresaIdByChave(empresaChave)
-      if (!empresaId) {
-        console.log('⚠️ Empresa não encontrada, retornando dados mockados')
-        const mockData: Aniversariante[] = [
-          {
-            id: Math.floor(Math.random() * 1000) + 1000,
-            created_at: new Date().toISOString(),
-            codigo: `MOCK01`,
-            nome: `Aniversariante Mock`,
-            dataNascimento: '1990-06-15',
-            telefone: null,
-            celular: '66999999999',
-            empresa_id: 1,
-            enviou_msg: false,
-            mensagem: 'Feliz aniversário! 🎉',
-            whatsapp_msg: null,
-            data_envio: null
-          }
-        ]
-        return { success: true, data: mockData }
+      // Buscar dados completos da empresa pela chave (usando a mesma fonte que a interface)
+      const empresaResult = await this.getEmpresaData(empresaChave)
+      if (!empresaResult.success || !empresaResult.data) {
+        return { success: false, error: 'Empresa não encontrada' }
       }
       
-      // Primeiro, teste básico de conexão com a tabela
-      console.log('🔌 Testando conexão com tabela aniversariantes...')
-      const { data: testData, error: testError } = await supabase
-        .from('aniversariantes')
-        .select('id')
-        .limit(1)
-
-      console.log('🧪 Teste de conexão:', { testData, testError })
-
-      if (testError) {
-        // Criar objeto de erro mais defensivo
-        let testErrorInfo: any = {
-          errorExists: true,
-          type: typeof testError,
-          constructorName: testError?.constructor?.name || 'Unknown'
-        }
-        
-        try {
-          testErrorInfo = {
-            ...testErrorInfo,
-            code: testError.code || 'UNKNOWN',
-            message: testError.message || 'Erro desconhecido',
-            details: testError.details || null,
-            hint: testError.hint || null,
-            httpStatus: (testError as any)?.status || null,
-            fullError: testError
-          }
-        } catch (e) {
-          testErrorInfo.parseError = 'Erro ao processar objeto de erro'
-          testErrorInfo.originalError = String(testError)
-        }
-        
-        console.error('❌ Erro na tabela aniversariantes:', testErrorInfo)
-        // Se a tabela não existe, retorna dados mockados
-        if (testError.code === 'PGRST116' || testError.message?.includes('relation') || testError.message?.includes('does not exist')) {
-          console.log('⚠️ Tabela aniversariantes não encontrada, usando dados mockados')
-          const mockData: Aniversariante[] = [
-            {
-              id: 1,
-              created_at: new Date().toISOString(),
-              codigo: '12345',
-              nome: 'João Silva (Mock)',
-              dataNascimento: '1990-06-15',
-              telefone: null,
-              celular: '66999999999',
-              empresa_id: empresaId,
-              enviou_msg: false,
-              mensagem: 'Feliz aniversário! 🎉',
-              whatsapp_msg: null,
-              data_envio: null
-            },
-            {
-              id: 2,
-              created_at: new Date().toISOString(),
-              codigo: '12346',
-              nome: 'Maria Santos (Mock)',
-              dataNascimento: '1985-06-20',
-              telefone: null,
-              celular: '66988888888',
-              empresa_id: empresaId,
-              enviou_msg: false,
-              mensagem: 'Feliz aniversário! 🎉',
-              whatsapp_msg: null,
-              data_envio: null
-            }
-          ]
-          return { success: true, data: mockData }
-        }
-        return { success: false, error: testError.message || 'Erro na conexão com a tabela' }
-      }
-
-      // Se chegou até aqui, a tabela existe
-      console.log('✅ Tabela aniversariantes encontrada')
-
-      // Primeiro, vamos verificar se há dados na tabela
-      const { data: allData, error: debugError } = await supabase
-        .from('aniversariantes')
-        .select('empresa_id, id, nome')
-        .limit(5)
-
-      console.log('🔎 Debug - Primeiros registros na tabela:', allData, debugError)
-
-      console.log('🎯 Buscando especificamente para empresa_id (number):', empresaId)
-
+      const empresaId = empresaResult.data.id
+      console.log('🔍 Buscando aniversariantes para empresa:', empresaResult.data.empresa, 'ID:', empresaId)
+      
+      // Buscar aniversariantes para a empresa específica
       const { data, error } = await supabase
         .from('aniversariantes')
         .select('*')
         .eq('empresa_id', empresaId)
-        .order('created_at', { ascending: false }) // Ordenar por mais recentes primeiro
-
-      console.log('📊 Resultado da consulta principal:', { 
-        empresaChave,
-        empresaIdUsado: empresaId,
-        data, 
-        error,
-        quantidadeEncontrada: data?.length || 0
-      })
+        .order('created_at', { ascending: false })
 
       if (error) {
-        const errorInfo = {
-          code: error.code || 'UNKNOWN',
-          message: error.message || 'Erro desconhecido',
-          details: error.details || null,
-          hint: error.hint || null,
-          httpStatus: (error as any)?.status || null,
-          fullError: error
-        }
-        console.error('❌ Erro ao buscar aniversariantes:', errorInfo)
+        console.error('❌ Erro ao buscar aniversariantes:', error)
         return { success: false, error: error.message || 'Erro na consulta de aniversariantes' }
       }
 
-      // Se não encontrou com o ID fornecido, vamos tentar buscar todos
-      if (!data || data.length === 0) {
-        console.log('⚠️ Nenhum registro encontrado para empresa_id:', empresaId)
-        console.log('🔄 Tentando buscar todos os registros...')
-        
-        const { data: todosData, error: todosError } = await supabase
-          .from('aniversariantes')
-          .select('*')
-          .limit(10)
-
-        console.log('📋 Todos os registros (primeiros 10):', todosData, todosError)
-        
-        // Se existem dados na tabela mas não para essa empresa, criar dados mockados
-        if (todosData && todosData.length > 0) {
-          console.log('⚠️ Dados existem na tabela mas não para empresa', empresaId)
-          console.log('🔧 Criando dados mockados para empresa', empresaId)
-          const mockData: Aniversariante[] = [
-            {
-              id: Math.floor(Math.random() * 1000) + 1000,
-              created_at: new Date().toISOString(),
-              codigo: `MOCK${empresaId}01`,
-              nome: `Aniversariante Teste 1 (Empresa ${empresaId})`,
-              dataNascimento: '1990-06-15',
-              telefone: null,
-              celular: '66999999999',
-              empresa_id: empresaId,
-              enviou_msg: false,
-              mensagem: 'Feliz aniversário! 🎉',
-              whatsapp_msg: null,
-              data_envio: null
-            }
-          ]
-          return { success: true, data: mockData }
-        }
-      }
-
-      // Adiciona informação sobre se os dados são recentes (últimos 5 minutos)
-      const agora = new Date()
-      const dataComInfo = (data || []).map(item => ({
-        ...item,
-        isRecente: item.created_at ? 
-          (agora.getTime() - new Date(item.created_at).getTime()) < 5 * 60 * 1000 : false
-      }))
-      
-      console.log(`✅ Encontrados ${dataComInfo.length} aniversariantes`)
-      return { success: true, data: dataComInfo }
+      console.log(`✅ Encontrados ${data?.length || 0} aniversariantes`)
+      return { success: true, data: data || [] }
     } catch (error) {
       console.error('💥 Erro inesperado ao buscar aniversariantes:', error)
       console.log('🔧 Retornando dados mockados devido ao erro')
@@ -502,29 +347,35 @@ export const api = {
   },
 
   // Aniversariantes - Coleta (1ª chamada webhook)
-  async coletarAniversariantes(cnpj: string, dataInicial: string, dataFinal: string): Promise<ApiResponse<any>> {
+  async coletarAniversariantes(cnpj: string, dataInicial: string, dataFinal: string, nomeSistema: string): Promise<ApiResponse<any>> {
     try {
+      const payload = {
+        cnpj,
+        comando: "aniversariantes",
+        data_inicial: dataInicial,
+        data_final: dataFinal,
+        nomeSistema
+      }
+
       const response = await fetch(WEBHOOK_ANIVERSARIANTES_COLETA, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          cnpj,
-          comando: "aniversariantes",
-          data_inicial: dataInicial,
-          data_final: dataFinal
-        })
+        body: JSON.stringify(payload)
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorText = await response.text()
+        console.error('❌ Erro na resposta:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
       }
 
       const data = await response.json()
+      console.log('✅ Webhook executado com sucesso:', data)
       return { success: true, data }
     } catch (error) {
-      console.error('API Error:', error)
+      console.error('💥 Erro na requisição:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Erro desconhecido'
@@ -533,7 +384,7 @@ export const api = {
   },
 
   // Aniversariantes - Envio de mensagens (2ª chamada webhook)
-  async enviarMensagensAniversariantes(cnpj: string, aniversariantes: any[]): Promise<ApiResponse<any>> {
+  async enviarMensagensAniversariantes(cnpj: string, aniversariantes: any[], nomeSistema: string): Promise<ApiResponse<any>> {
     try {
       const response = await fetch(WEBHOOK_ANIVERSARIANTES_ENVIO, {
         method: 'POST',
@@ -543,7 +394,8 @@ export const api = {
         body: JSON.stringify({
           cnpj,
           comando: "mensagem_aniversariantes",
-          aniversariantes
+          aniversariantes,
+          nomeSistema
         })
       })
 
@@ -565,10 +417,13 @@ export const api = {
   // Cobranças - Buscar do Supabase
   async getCobrancas(empresaChave: string): Promise<ApiResponse<Cobranca[]>> {
     try {
-      const empresaId = await getEmpresaIdByChave(empresaChave)
-      if (!empresaId) {
+      // Buscar dados completos da empresa pela chave (usando a mesma fonte que a interface)
+      const empresaResult = await this.getEmpresaData(empresaChave)
+      if (!empresaResult.success || !empresaResult.data) {
         return { success: false, error: 'Empresa não encontrada' }
       }
+      
+      const empresaId = empresaResult.data.id
 
       const { data, error } = await supabase
         .from('cobranca')
@@ -603,6 +458,7 @@ export const api = {
   async coletarCobrancas(
     cnpj: string, 
     tipoCobranca: 'vencidas' | 'vencehoje' | 'venceamanha' | 'custom',
+    nomeSistema: string,
     dataInicial?: string, 
     dataFinal?: string
   ): Promise<ApiResponse<any>> {
@@ -618,6 +474,7 @@ export const api = {
       const payload: any = {
         cnpj,
         comando: comandoMap[tipoCobranca],
+        nomeSistema,
         data_inicial: dataInicial,
         data_final: dataFinal
       }
@@ -660,7 +517,7 @@ export const api = {
   },
 
   // Cobranças - Envio de mensagens (webhook)
-  async enviarMensagensCobrancas(cnpj: string, cobrancas: Cobranca[]): Promise<ApiResponse<any>> {
+  async enviarMensagensCobrancas(cnpj: string, cobrancas: Cobranca[], nomeSistema: string): Promise<ApiResponse<any>> {
     try {
       console.log('🚀 Enviando mensagens de cobrança:', {
         cnpj,
@@ -674,6 +531,7 @@ export const api = {
       const payload = {
         cnpj: cnpj || null, // Permitir null como no exemplo
         comando: "atualizar_cobranca",
+        nomeSistema,
         cobrancas: cobrancas.map(cobranca => ({
           id: cobranca.id,
           empresa: cobranca.empresa || "1",
@@ -1013,4 +871,4 @@ export function useApi() {
   }
 
   return { request, loading, error }
-} 
+}

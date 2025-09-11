@@ -171,11 +171,23 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
         showToast("🧹 Cache limpo para nova consulta personalizada", 'info')
       }
       
-      const result = await api.coletarCobrancas(empresaAtual.cnpj, tipoCobranca, dataInicial, dataFinal)
+      const result = await api.coletarCobrancas(empresaAtual.cnpj, tipoCobranca, empresaAtual.nome_sistema || '', dataInicial, dataFinal)
       
       if (result.success) {
         console.log('✅ Webhook chamado com sucesso:', result.data)
         showToast("🔄 Processando cobranças... Os dados aparecerão automaticamente quando prontos.", 'info', false)
+        
+        // Verificação automática após 3 segundos
+        setTimeout(() => {
+          console.log('🔄 Verificação automática após webhook...')
+          buscarCobrancasSupabase(false, true) // silentMode = true
+        }, 3000)
+        
+        // Verificação automática após 8 segundos
+        setTimeout(() => {
+          console.log('🔄 Segunda verificação automática...')
+          buscarCobrancasSupabase(false, true) // silentMode = true
+        }, 8000)
         
         // Aguardar um tempo para ver se chegam dados via realtime
         setTimeout(() => {
@@ -359,7 +371,7 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
       }
 
       // Chama o webhook para envio das mensagens
-      const result = await api.enviarMensagensCobrancas(empresaAtual.cnpj, cobrancasParaEnvio)
+      const result = await api.enviarMensagensCobrancas(empresaAtual.cnpj, cobrancasParaEnvio, empresaAtual.nome_sistema || '')
       
       if (result.success) {
         showToast(`🎉 ${cobrancasParaEnvio.length} mensagens de cobrança enviadas e removidas da lista!`, 'success')
@@ -441,7 +453,7 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
         whatsapp: numeroParaEnvio
       }
 
-      const result = await api.enviarMensagensCobrancas(empresaAtual.cnpj, [cobrancaComMensagem])
+      const result = await api.enviarMensagensCobrancas(empresaAtual.cnpj, [cobrancaComMensagem], empresaAtual.nome_sistema || '')
       
       if (result.success) {
         // Atualiza o status no Supabase
@@ -625,13 +637,14 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
     }
   }, [cobrancas.length, toastMessage])
 
-  // Realtime subscription para cobranças
+  // Realtime subscription para cobranças + Polling de backup
   useEffect(() => {
     if (!empresaChave) return
 
     console.log('🔔 Configurando Realtime para cobranças empresa chave:', empresaChave)
 
     let subscription: any = null
+    let pollingInterval: NodeJS.Timeout | null = null
 
     try {
       // Criar subscription para mudanças na tabela cobranca
@@ -678,29 +691,54 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
           if (status === 'SUBSCRIBED') {
             console.log('✅ Conectado ao Realtime para cobranças')
             setRealtimeConnected(true)
+            // Se Realtime funcionou, não precisa do polling
+            if (pollingInterval) {
+              clearInterval(pollingInterval)
+              pollingInterval = null
+            }
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
             console.warn('⚠️ Problema na conexão Realtime cobranças:', status)
             setRealtimeConnected(false)
-            // Não mostrar toast para evitar spam - apenas log
-            console.log('💡 Realtime desabilitado temporariamente. Dados ainda serão atualizados manualmente.')
+            
+            // Se Realtime falhou, ativar polling de backup
+            if (!pollingInterval) {
+              console.log('🔄 Ativando polling de backup para cobranças...')
+              pollingInterval = setInterval(() => {
+                console.log('🔄 Polling: Verificando mudanças na tabela cobranca...')
+                buscarCobrancasSupabase(false, true) // silentMode = true
+              }, 3000) // Verificar a cada 3 segundos
+            }
           }
         })
     } catch (error) {
       console.warn('⚠️ Erro ao configurar Realtime cobranças (modo fallback ativo):', error)
       setRealtimeConnected(false)
-      // Não mostrar erro ao usuário, apenas continuar sem realtime
+      
+      // Se Realtime falhou completamente, ativar polling
+      if (!pollingInterval) {
+        console.log('🔄 Ativando polling de backup para cobranças...')
+        pollingInterval = setInterval(() => {
+          console.log('🔄 Polling: Verificando mudanças na tabela cobranca...')
+          buscarCobrancasSupabase(false, true) // silentMode = true
+        }, 3000) // Verificar a cada 3 segundos
+      }
     }
 
-    // Cleanup: remover subscription quando componente for desmontado
+    // Cleanup: remover subscription e polling quando componente for desmontado
     return () => {
-      console.log('🔌 Desconectando Realtime subscription cobranças')
+      console.log('🔌 Desconectando Realtime subscription e polling cobranças')
       setRealtimeConnected(false)
+      
       if (subscription) {
         try {
           subscription.unsubscribe()
         } catch (error) {
           console.warn('⚠️ Erro ao desconectar subscription cobranças:', error)
         }
+      }
+      
+      if (pollingInterval) {
+        clearInterval(pollingInterval)
       }
     }
   }, [empresaChave]) // Recriar subscription se empresaChave mudar
@@ -933,7 +971,7 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
                   <DollarSign className="h-4 w-4" />
                 )}
                 {loadingColeta ? "Enviando solicitação..." : 
-                 toastMessage?.includes('Processando') ? "Processando..." :
+                 toastMessage?.includes('Processando') ? "Processando..." : 
                  !empresaAtual?.cnpj ? "Aguardando dados da empresa..." : 
                  "Coletar Cobranças"}
               </Button>
