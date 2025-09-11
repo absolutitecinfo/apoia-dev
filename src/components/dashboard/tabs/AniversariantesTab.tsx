@@ -198,8 +198,16 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
     setLoadingEnvio(true)
     try {
       // Filtra apenas aniversariantes que não foram enviados E que estão selecionados
-      const aniversariantesParaEnvio = aniversariantes
+      const aniversariantesSelecionadosParaEnvio = aniversariantes
         .filter(a => !a.enviou_msg && aniversariantesSelecionados.has(a.id))
+      
+      const aniversariantesComNumeroValido = aniversariantesSelecionadosParaEnvio
+        .filter(a => {
+          // Só incluir aniversariantes que tenham número válido
+          return a.celular && a.celular.trim().length > 0
+        })
+
+      const aniversariantesParaEnvio = aniversariantesComNumeroValido
         .map(aniversariante => {
           const mensagemBase = aniversariante.mensagem || mensagemPadrao
           const mensagemProcessada = processarMensagem(mensagemBase, aniversariante)
@@ -209,9 +217,20 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
           }
         })
 
-      if (aniversariantesParaEnvio.length === 0) {
+      if (aniversariantesSelecionadosParaEnvio.length === 0) {
         showToast("Nenhum aniversariante selecionado para envio", 'info')
         return
+      }
+
+      if (aniversariantesParaEnvio.length === 0) {
+        showToast("Nenhum dos aniversariantes selecionados possui número válido para envio", 'warning')
+        return
+      }
+
+      // Informar se algumas aniversariantes foram filtradas
+      const aniversariantesFiltradas = aniversariantesSelecionadosParaEnvio.length - aniversariantesParaEnvio.length
+      if (aniversariantesFiltradas > 0) {
+        showToast(`⚠️ ${aniversariantesFiltradas} aniversariante(s) ignorado(s) por não ter número válido`, 'warning')
       }
 
       // Chama o webhook para envio das mensagens
@@ -257,6 +276,13 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
     )
   }
 
+  // Função para atualizar celular individual
+  const atualizarCelular = (id: number, novoCelular: string) => {
+    setAniversariantes(prev => 
+      prev.map(a => a.id === id ? { ...a, celular: novoCelular } : a)
+    )
+  }
+
   // Função para enviar mensagem individual
   const enviarMensagemIndividual = async (aniversariante: Aniversariante) => {
     if (!empresaAtual?.cnpj) {
@@ -266,6 +292,12 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
 
     setLoadingIndividual(aniversariante.id)
     try {
+      // Verificar se há um número válido para envio
+      if (!aniversariante.celular || aniversariante.celular.trim().length === 0) {
+        showToast("Não há número válido para envio desta mensagem", 'error')
+        return
+      }
+
       const mensagemBase = aniversariante.mensagem || mensagemPadrao
       const mensagemProcessada = processarMensagem(mensagemBase, aniversariante)
       
@@ -895,6 +927,8 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
               <CardTitle>Aniversariantes Pendentes</CardTitle>
               <CardDescription>
                 Apenas aniversariantes que ainda não receberam mensagem (enviados são removidos automaticamente)
+                <br />
+                💡 <strong>Números:</strong> Você pode editar o número do celular. Certifique-se de que há um número válido antes do envio.
               </CardDescription>
             </div>
             
@@ -912,7 +946,7 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar por nome ou telefone..."
+              placeholder="Buscar por nome ou celular..."
               className="pl-8 pr-8"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -990,7 +1024,26 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
                     <TableCell>
                       {aniversariante.dataNascimento ? new Date(aniversariante.dataNascimento).toLocaleDateString('pt-BR') : '-'}
                     </TableCell>
-                    <TableCell>{aniversariante.celular || '-'}</TableCell>
+                    <TableCell>
+                      <Input
+                        type="tel"
+                        value={aniversariante.celular || ''}
+                        onChange={(e) => atualizarCelular(aniversariante.id, e.target.value)}
+                        placeholder="(11) 99999-9999"
+                        className="min-w-[140px]"
+                      />
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {aniversariante.celular ? (
+                          <span className="text-blue-600 font-medium">
+                            📱 Número válido para envio
+                          </span>
+                        ) : (
+                          <span className="text-red-600 font-medium">
+                            ⚠️ Sem número para envio
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <Badge 
                         variant={aniversariante.enviou_msg === true ? 'default' : 'secondary'}
@@ -1077,4 +1130,4 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
     </DashboardTab>
     </>
   )
-} 
+}

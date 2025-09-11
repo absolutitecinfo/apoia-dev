@@ -208,17 +208,10 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
   }
 
   // Função para buscar cobranças do Supabase (após webhook processar)
-  const buscarCobrancasSupabase = async (showLoadingState = false, silentMode = false, clearCache = false) => {
+  const buscarCobrancasSupabase = async (showLoadingState = false, silentMode = false) => {
     if (showLoadingState) setLoadingRefresh(true)
     try {
       console.log('🔄 Iniciando busca de cobranças para empresa:', empresaChave)
-      
-      // Se solicitado limpeza de cache, limpar dados locais primeiro
-      if (clearCache) {
-        console.log('🧹 Limpando cache local antes da busca...')
-        setCobrancas([])
-        setCobrancasSelecionadas(new Set())
-      }
       
       const result = await api.getCobrancas(empresaChave)
       
@@ -306,18 +299,13 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
   }
 
   // Função específica para o botão de refresh
-  const refreshCobrancas = async (clearCache = false) => {
-    await buscarCobrancasSupabase(true, false, clearCache)
+  const refreshCobrancas = async () => {
+    await buscarCobrancasSupabase(true)
   }
 
   // Wrapper para o botão de refresh
   const handleRefreshClick = () => {
-    refreshCobrancas(false)
-  }
-
-  // Função para refresh com limpeza de cache
-  const handleRefreshWithClearCache = () => {
-    refreshCobrancas(true)
+    refreshCobrancas()
   }
 
   // Função para enviar mensagens (2ª chamada)
@@ -914,7 +902,7 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
               {tipoCobranca === 'custom' && (
                 <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
                   <div className="text-sm text-blue-700">
-                    💡 <strong>Período Customizado:</strong> O cache será automaticamente limpo para evitar conflitos com consultas anteriores.
+                    💡 <strong>Período Customizado:</strong> Defina um período específico para coleta de cobranças.
                   </div>
                 </div>
               )}
@@ -976,28 +964,15 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
                  "Coletar Cobranças"}
               </Button>
               
-              <div className="flex gap-2">
-                <Button 
-                  variant="outline"
-                  onClick={handleRefreshClick}
-                  disabled={loadingRefresh}
-                  className="flex items-center gap-2"
-                >
-                  <RefreshCw className={`h-4 w-4 ${loadingRefresh ? 'animate-spin' : ''}`} />
-                  {loadingRefresh ? 'Atualizando...' : 'Atualizar Lista'}
-                </Button>
-                
-                <Button 
-                  variant="outline"
-                  onClick={handleRefreshWithClearCache}
-                  disabled={loadingRefresh}
-                  className="flex items-center gap-2"
-                  title="Atualizar limpando cache local"
-                >
-                  <RefreshCw className={`h-4 w-4 ${loadingRefresh ? 'animate-spin' : ''}`} />
-                  🧹 Limpar Cache
-                </Button>
-              </div>
+              <Button 
+                variant="outline"
+                onClick={handleRefreshClick}
+                disabled={loadingRefresh}
+                className="flex items-center gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${loadingRefresh ? 'animate-spin' : ''}`} />
+                {loadingRefresh ? 'Atualizando...' : 'Atualizar Lista'}
+              </Button>
             </div>
           </CardContent>
         </Card>
