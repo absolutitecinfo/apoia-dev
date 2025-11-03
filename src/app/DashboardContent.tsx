@@ -11,7 +11,7 @@ import { AniversariantesTab } from "@/components/dashboard/tabs/AniversariantesT
 import { CobrancasTab } from "@/components/dashboard/tabs/CobrancasTab"
 
 // Chave UUID padrão da empresa (fallback)
-const EMPRESA_CHAVE_PADRAO = "14915148-1496-4762-880c-d925aecb9702"
+const EMPRESA_CHAVE_PADRAO = "f552a3d5-b400-4199-b852-e04deb4c36b1"
 
 export default function DashboardContent() {
   const [isLoading, setIsLoading] = useState(true)

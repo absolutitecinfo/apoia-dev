@@ -34,7 +34,6 @@ export interface Cobranca {
   empresa: string | null
   codigo: string | null
   nome: string | null
-  telefone: string | null
   celular: string | null
   codcobranca: string | null
   vencimento: string | null // date
@@ -44,7 +43,6 @@ export interface Cobranca {
   empresa_id: number | null
   enviou: boolean | null
   mensagem: string | null
-  whatsapp: string | null
   data_envio: string | null // timestamptz
 }
 

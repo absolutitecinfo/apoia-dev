@@ -12,7 +12,7 @@
         "--project-ref=bslsxolmfzrvprghxfrr"
       ],
       "env": {
-        "SUPABASE_ACCESS_TOKEN": "sbp_419a6273abd213c6996e9658ab201cfc69191633"
+        "SUPABASE_ACCESS_TOKEN": "sbp_cdff4dc1746549a80afe50fa201f56d910681448"
       }
     }
   }

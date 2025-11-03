@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 export default function DebugRealtimePage() {
-  const [empresaChave, setEmpresaChave] = useState("14915148-1496-4762-880c-d925aecb9702")
+  // Chave padrão da empresa
+  const [empresaChave, setEmpresaChave] = useState("f552a3d5-b400-4199-b852-e04deb4c36b1")
   const [data, setData] = useState<any[]>([])
   const [realtimeStatus, setRealtimeStatus] = useState<string>('DISCONNECTED')
   const [logs, setLogs] = useState<string[]>([])

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { DashboardTab } from "../DashboardTab"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Calendar, Search, Send, RefreshCw, MessageSquare, Users, X, CheckCircle, AlertCircle, Info, AlertTriangle, Trash2 } from "lucide-react"
 import { api } from "@/lib/api"
+import { LoadingSpinner, LoadingOverlay } from "@/components/ui/loading-spinner"
 
 import { supabase } from "@/lib/supabase"
 import type { Aniversariante, Empresa } from "@/lib/types"
@@ -156,23 +157,10 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
           if (!silentMode) showToast(`${result.data.length} aniversariantes carregados do banco`, 'success')
         }
       } else if (result.success && (!result.data || result.data.length === 0)) {
-        // Se não encontrou dados para a empresa específica, tenta buscar TODOS os dados
-        try {
-          const { data: todosOsDados, error: errorTodos } = await supabase
-            .from('aniversariantes')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(20)
-          
-          if (todosOsDados && todosOsDados.length > 0) {
-            setAniversariantes(todosOsDados)
-            if (!silentMode) showToast(`${todosOsDados.length} aniversariantes encontrados (todos da tabela)`, 'warning')
-          } else {
-            setAniversariantes([])
-          }
-        } catch (error) {
-          console.error('Erro ao buscar todos os dados:', error)
-        }
+        // Se não encontrou dados para a empresa específica, apenas define lista vazia
+        // Não buscamos dados de outras empresas para garantir que os cards informativos sejam corretos
+        setAniversariantes([])
+        if (!silentMode) showToast('Nenhum aniversariante encontrado para esta empresa', 'info')
       } else {
         showToast(`Erro ao buscar aniversariantes: ${result.error || 'Erro desconhecido'}`, 'error')
       }
@@ -468,15 +456,20 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
   const calcularEstatisticas = (filtro: typeof filtroEstatisticas) => {
     const dataLimite = getDataLimite(filtro)
     
-    const coletadosNoPeriodo = aniversariantes.filter(a => 
+    // Garantir que apenas dados da empresa atual sejam considerados nas estatísticas
+    const aniversariantesDaEmpresa = empresaAtual?.id 
+      ? aniversariantes.filter(a => a.empresa_id === empresaAtual.id)
+      : aniversariantes // Se não houver empresaAtual ainda, usar todos (mas isso não deve acontecer)
+    
+    const coletadosNoPeriodo = aniversariantesDaEmpresa.filter(a => 
       new Date(a.created_at) >= dataLimite
     )
     
-    const enviadosNoPeriodo = aniversariantes.filter(a => 
+    const enviadosNoPeriodo = aniversariantesDaEmpresa.filter(a => 
       a.data_envio && new Date(a.data_envio) >= dataLimite
     )
     
-    const pendentesPeriodo = aniversariantes.filter(a => 
+    const pendentesPeriodo = aniversariantesDaEmpresa.filter(a => 
       !a.enviou_msg && new Date(a.created_at) >= dataLimite
     )
     
@@ -484,11 +477,14 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
       coletados: coletadosNoPeriodo.length,
       enviados: enviadosNoPeriodo.length,
       pendentes: pendentesPeriodo.length,
-      total: aniversariantes.length
+      total: aniversariantesDaEmpresa.length
     }
   }
 
-  const estatisticas = calcularEstatisticas(filtroEstatisticas)
+  // Calcular estatísticas apenas para a empresa atual, recalculando quando empresaAtual, aniversariantes ou filtroEstatisticas mudarem
+  const estatisticas = useMemo(() => {
+    return calcularEstatisticas(filtroEstatisticas)
+  }, [filtroEstatisticas, aniversariantes, empresaAtual?.id])
 
   // Filtrar aniversariantes por busca e status de envio
   const aniversariantesFiltrados = aniversariantes
@@ -685,9 +681,16 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
     )
   }
 
+  // Determinar se está carregando (coleta ou refresh)
+  const isLoadingData = loadingColeta || loadingRefresh
+
   return (
     <>
       <ToastComponent />
+      <LoadingOverlay 
+        isLoading={isLoadingData} 
+        text={loadingColeta ? "Coletando aniversariantes..." : "Atualizando lista..."} 
+      />
       <DashboardTab 
         title="Aniversariantes" 
         description="Gerencie campanhas de aniversário e envio de mensagens"
@@ -826,11 +829,11 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
             </div>
             <Button 
               onClick={coletarAniversariantes}
-              disabled={loadingColeta || toastMessage?.includes('Processando') || !empresaAtual?.cnpj}
+              disabled={isLoadingData || toastMessage?.includes('Processando') || !empresaAtual?.cnpj}
               className="flex items-center gap-2"
             >
               {loadingColeta || toastMessage?.includes('Processando') ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
+                <LoadingSpinner size="sm" />
               ) : (
                 <Calendar className="h-4 w-4" />
               )}
@@ -842,10 +845,14 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
                         <Button 
               variant="outline"
               onClick={refreshAniversariantes}
-              disabled={loadingRefresh}
+              disabled={isLoadingData}
               className="flex items-center gap-2"
             >
-              <RefreshCw className={`h-4 w-4 ${loadingRefresh ? 'animate-spin' : ''}`} />
+              {loadingRefresh ? (
+                <LoadingSpinner size="sm" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
               {loadingRefresh ? 'Atualizando...' : 'Atualizar Lista'}
             </Button>
           </div>

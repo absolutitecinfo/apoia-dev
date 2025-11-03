@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { DashboardTab } from "../DashboardTab"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DollarSign, Search, Send, RefreshCw, AlertTriangle, Users, X, CheckCircle, AlertCircle, Info, Clock, Trash2 } from "lucide-react"
 import { api } from "@/lib/api"
+import { LoadingSpinner, LoadingOverlay } from "@/components/ui/loading-spinner"
 
 import { supabase } from "@/lib/supabase"
 import type { Cobranca, Empresa } from "@/lib/types"
@@ -123,15 +124,20 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
   const calcularEstatisticas = (filtro: typeof filtroEstatisticas) => {
     const dataLimite = getDataLimite(filtro)
     
-    const coletadosNoPeriodo = cobrancas.filter(c => 
+    // Garantir que apenas dados da empresa atual sejam considerados nas estatísticas
+    const cobrancasDaEmpresa = empresaAtual?.id 
+      ? cobrancas.filter(c => c.empresa_id === empresaAtual.id)
+      : cobrancas // Se não houver empresaAtual ainda, usar todos (mas isso não deve acontecer)
+    
+    const coletadosNoPeriodo = cobrancasDaEmpresa.filter(c => 
       new Date(c.created_at) >= dataLimite
     )
     
-    const enviadosNoPeriodo = cobrancas.filter(c => 
+    const enviadosNoPeriodo = cobrancasDaEmpresa.filter(c => 
       c.data_envio && new Date(c.data_envio) >= dataLimite
     )
     
-    const pendentesPeriodo = cobrancas.filter(c => 
+    const pendentesPeriodo = cobrancasDaEmpresa.filter(c => 
       !c.enviou && new Date(c.created_at) >= dataLimite
     )
 
@@ -143,14 +149,17 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
       coletados: coletadosNoPeriodo.length,
       enviados: enviadosNoPeriodo.length,
       pendentes: pendentesPeriodo.length,
-      total: cobrancas.length,
+      total: cobrancasDaEmpresa.length,
       valorTotal: valorTotalPeriodo,
       valorEnviado: valorEnviadoPeriodo,
       valorPendente: valorPendentePeriodo
     }
   }
 
-  const estatisticas = calcularEstatisticas(filtroEstatisticas)
+  // Calcular estatísticas apenas para a empresa atual, recalculando quando empresaAtual, cobrancas ou filtroEstatisticas mudarem
+  const estatisticas = useMemo(() => {
+    return calcularEstatisticas(filtroEstatisticas)
+  }, [filtroEstatisticas, cobrancas, empresaAtual?.id])
 
   // Função para buscar cobranças (1ª chamada)
   const coletarCobrancas = async () => {
@@ -278,7 +287,6 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
           empresa: "Dados de Emergência",
           codigo: "EMERGENCY01",
           nome: "Cliente de Emergência",
-          telefone: "66999999999",
           celular: "66999999999",
           codcobranca: "EMERGENCY01",
           vencimento: new Date().toISOString().split('T')[0],
@@ -288,7 +296,6 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
           empresa_id: 1,
           enviou: false,
           mensagem: mensagemPadrao,
-          whatsapp: null,
           data_envio: null
         }
       ]
@@ -323,22 +330,17 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
       
       const cobrancasComNumeroValido = cobrancasSelecionadasParaEnvio
         .filter(c => {
-          // Só incluir cobranças que tenham pelo menos um número válido
-          const numeroParaEnvio = c.whatsapp?.trim() || c.celular
-          return numeroParaEnvio && numeroParaEnvio.trim().length > 0
+          // Só incluir cobranças que tenham número válido
+          return c.celular && c.celular.trim().length > 0
         })
 
       const cobrancasParaEnvio = cobrancasComNumeroValido
         .map(cobranca => {
           const mensagemBase = cobranca.mensagem || mensagemPadrao
           const mensagemProcessada = processarMensagem(mensagemBase, cobranca)
-          // Usar o WhatsApp se estiver preenchido, senão usar o celular
-          const numeroParaEnvio = cobranca.whatsapp?.trim() || cobranca.celular
           return {
             ...cobranca,
-            mensagem: mensagemProcessada,
-            enviou: true,
-            whatsapp: numeroParaEnvio
+            mensagem: mensagemProcessada
           }
         })
 
@@ -401,12 +403,7 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
     )
   }
 
-  const atualizarWhatsapp = (id: string, novoWhatsapp: string) => {
-    setCobrancas(prev => 
-      prev.map(c => c.id === id ? { ...c, whatsapp: novoWhatsapp } : c)
-    )
-  }
-
+  // Função para atualizar celular individual
   const atualizarCelular = (id: string, novoCelular: string) => {
     setCobrancas(prev => 
       prev.map(c => c.id === id ? { ...c, celular: novoCelular } : c)
@@ -423,8 +420,7 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
     setLoadingIndividual(cobranca.id)
     try {
       // Verificar se há um número válido para envio
-      const numeroParaEnvio = cobranca.whatsapp?.trim() || cobranca.celular
-      if (!numeroParaEnvio || numeroParaEnvio.trim().length === 0) {
+      if (!cobranca.celular || cobranca.celular.trim().length === 0) {
         showToast("Não há número válido para envio desta cobrança", 'error')
         return
       }
@@ -432,13 +428,9 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
       const mensagemBase = cobranca.mensagem || mensagemPadrao
       const mensagemProcessada = processarMensagem(mensagemBase, cobranca)
       
-      // Usar o WhatsApp se estiver preenchido, senão usar o celular
-      
       const cobrancaComMensagem = {
         ...cobranca,
-        mensagem: mensagemProcessada,
-        enviou: true,
-        whatsapp: numeroParaEnvio
+        mensagem: mensagemProcessada
       }
 
       const result = await api.enviarMensagensCobrancas(empresaAtual.cnpj, [cobrancaComMensagem], empresaAtual.nome_sistema || '')
@@ -587,11 +579,18 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
   // Filtrar cobranças por busca e status de envio
   const cobrancasFiltradas = cobrancas
     .filter(c => !c.enviou) // Só mostra as que ainda não foram enviadas
-    .filter(c =>
-      (c.nome?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-      (c.celular?.includes(searchTerm) || false) ||
-      (c.whatsapp?.includes(searchTerm) || false)
-    )
+    .filter(c => {
+      // Se não há termo de busca, mostrar todos
+      if (!searchTerm || searchTerm.trim() === '') {
+        return true
+      }
+      
+      // Verificar se o nome ou celular contém o termo de busca
+      const nomeMatch = c.nome?.toLowerCase().includes(searchTerm.toLowerCase()) || false
+      const celularMatch = c.celular?.includes(searchTerm) || false
+      
+      return nomeMatch || celularMatch
+    })
 
   // Carregar dados da empresa e cobranças automaticamente ao inicializar
   useEffect(() => {
@@ -769,9 +768,16 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
     )
   }
 
+  // Determinar se está carregando (coleta ou refresh)
+  const isLoadingData = loadingColeta || loadingRefresh
+
   return (
     <>
       <ToastComponent />
+      <LoadingOverlay 
+        isLoading={isLoadingData} 
+        text={loadingColeta ? "Coletando cobranças..." : "Atualizando lista..."} 
+      />
       <DashboardTab 
         title="Cobranças" 
         description="Gerencie cobranças e envio de mensagens de cobrança"
@@ -950,11 +956,11 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
               
               <Button 
                 onClick={coletarCobrancas}
-                disabled={loadingColeta || toastMessage?.includes('Processando') || !empresaAtual?.cnpj}
+                disabled={isLoadingData || toastMessage?.includes('Processando') || !empresaAtual?.cnpj}
                 className="flex items-center gap-2"
               >
                 {loadingColeta || toastMessage?.includes('Processando') ? (
-                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  <LoadingSpinner size="sm" />
                 ) : (
                   <DollarSign className="h-4 w-4" />
                 )}
@@ -967,10 +973,14 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
               <Button 
                 variant="outline"
                 onClick={handleRefreshClick}
-                disabled={loadingRefresh}
+                disabled={isLoadingData}
                 className="flex items-center gap-2"
               >
-                <RefreshCw className={`h-4 w-4 ${loadingRefresh ? 'animate-spin' : ''}`} />
+                {loadingRefresh ? (
+                  <LoadingSpinner size="sm" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
                 {loadingRefresh ? 'Atualizando...' : 'Atualizar Lista'}
               </Button>
             </div>
@@ -1054,7 +1064,7 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
                 <CardDescription>
                   Apenas cobranças que ainda não foram enviadas (enviadas são removidas automaticamente)
                   <br />
-                  💡 <strong>Números:</strong> Você pode editar o número original ou adicionar um alternativo. O envio usará o número alternativo se preenchido, senão usará o original.
+                  💡 <strong>Números:</strong> Você pode editar o número do celular. Certifique-se de que há um número válido antes do envio.
                 </CardDescription>
               </div>
               
@@ -1072,7 +1082,7 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
             <div className="relative">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por nome, celular original ou WhatsApp alternativo..."
+                placeholder="Buscar por nome ou celular..."
                 className="pl-8"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -1120,8 +1130,7 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
                       <TableHead>Cliente</TableHead>
                       <TableHead>Valor</TableHead>
                       <TableHead>Vencimento</TableHead>
-                      <TableHead>Celular Original</TableHead>
-                      <TableHead>WhatsApp Alternativo</TableHead>
+                      <TableHead>Celular</TableHead>
                       <TableHead>Data Coleta</TableHead>
                       <TableHead>Mensagem</TableHead>
                       <TableHead>Ações</TableHead>
@@ -1154,29 +1163,16 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
                           className="min-w-[140px]"
                         />
                         <div className="text-xs text-muted-foreground mt-1">
-                          Número original da consulta
+                          {cobranca.celular ? (
+                            <span className="text-blue-600 font-medium">
+                              📱 Número válido para envio
+                            </span>
+                          ) : (
+                            <span className="text-red-600 font-medium">
+                              ⚠️ Sem número para envio
+                            </span>
+                          )}
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="tel"
-                          value={cobranca.whatsapp || ''}
-                          onChange={(e) => atualizarWhatsapp(cobranca.id, e.target.value)}
-                          placeholder="(11) 99999-9999"
-                          className="min-w-[140px]"
-                        />
-                        <div className="text-xs text-muted-foreground mt-1">
-                          Número alternativo (opcional)
-                        </div>
-                        {(cobranca.whatsapp?.trim() || cobranca.celular) ? (
-                          <div className="text-xs text-blue-600 mt-1 font-medium">
-                            📱 Enviará para: {cobranca.whatsapp?.trim() || cobranca.celular}
-                          </div>
-                        ) : (
-                          <div className="text-xs text-red-600 mt-1 font-medium">
-                            ⚠️ Sem número para envio
-                          </div>
-                        )}
                       </TableCell>
                       <TableCell>
                         <div className="text-sm">

@@ -127,7 +127,6 @@ export type Database = {
           empresa: string | null
           codigo: string | null
           nome: string | null
-          telefone: string | null
           celular: string | null
           codcobranca: string | null
           vencimento: string | null
@@ -137,14 +136,12 @@ export type Database = {
           empresa_id: number | null
           enviou: boolean | null
           mensagem: string | null
-          whatsapp: string | null
         }
         Insert: {
           id?: string
           empresa?: string | null
           codigo?: string | null
           nome?: string | null
-          telefone?: string | null
           celular?: string | null
           codcobranca?: string | null
           vencimento?: string | null
@@ -154,14 +151,12 @@ export type Database = {
           empresa_id?: number | null
           enviou?: boolean | null
           mensagem?: string | null
-          whatsapp?: string | null
         }
         Update: {
           id?: string
           empresa?: string | null
           codigo?: string | null
           nome?: string | null
-          telefone?: string | null
           celular?: string | null
           codcobranca?: string | null
           vencimento?: string | null
@@ -171,7 +166,6 @@ export type Database = {
           empresa_id?: number | null
           enviou?: boolean | null
           mensagem?: string | null
-          whatsapp?: string | null
         }
       }
     }
