@@ -259,7 +259,6 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
             empresa: "Empresa Teste",
             codigo: "CLI999",
             nome: "Cliente de Emergência",
-            telefone: "66999999999",
             celular: "66999999999",
             codcobranca: "COB999",
             vencimento: new Date().toISOString().split('T')[0],
@@ -269,7 +268,6 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
             empresa_id: 1,
             enviou: false,
             mensagem: mensagemPadrao,
-            whatsapp: null,
             data_envio: null
           }
         ]
