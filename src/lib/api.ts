@@ -519,36 +519,93 @@ export const api = {
   },
 
   // Cobranças - Envio de mensagens (webhook)
-  async enviarMensagensCobrancas(cnpj: string, cobrancas: Cobranca[], nomeSistema: string): Promise<ApiResponse<any>> {
+  async enviarMensagensCobrancas(cnpj: string, cobrancas: Cobranca[], nomeSistema: string, empresaId?: number): Promise<ApiResponse<any>> {
     try {
       console.log('🚀 Enviando mensagens de cobrança:', {
         cnpj,
         quantidade: cobrancas.length,
         webhook_url: WEBHOOK_COBRANCAS_ENVIO,
         ambiente: process.env.NODE_ENV,
-        cobrancas: cobrancas.map(c => ({ id: c.id, nome: c.nome, valor: c.valor }))
+        empresa_id: empresaId,
+        cobrancas: cobrancas.map(c => ({ id: c.id, nome: c.nome, valor: c.valor, codcobranca: c.codcobranca, empresa_id: c.empresa_id }))
       })
+
+      // Validar e filtrar cobranças antes de enviar
+      const cobrancasInvalidas: Array<{ cobranca: Cobranca; motivo: string }> = []
+      const cobrancasValidas: Cobranca[] = []
+
+      cobrancas.forEach(cobranca => {
+        // Validar codcobranca (não pode ser vazio ou null)
+        if (!cobranca.codcobranca || cobranca.codcobranca.trim() === '') {
+          cobrancasInvalidas.push({ cobranca, motivo: 'codcobranca ausente ou vazio' })
+          return
+        }
+
+        // Validar empresa_id (deve existir na cobrança ou ser passado como parâmetro)
+        const empresaIdFinal = cobranca.empresa_id || empresaId
+        if (!empresaIdFinal || empresaIdFinal <= 0) {
+          cobrancasInvalidas.push({ cobranca, motivo: 'empresa_id ausente ou inválido' })
+          return
+        }
+
+        cobrancasValidas.push(cobranca)
+      })
+
+      // Se houver cobranças inválidas, registrar no log
+      if (cobrancasInvalidas.length > 0) {
+        console.warn('⚠️ Cobranças inválidas encontradas:', cobrancasInvalidas.map(c => ({
+          id: c.cobranca.id,
+          nome: c.cobranca.nome,
+          codcobranca: c.cobranca.codcobranca,
+          empresa_id: c.cobranca.empresa_id,
+          motivo: c.motivo
+        })))
+      }
+
+      // Se não houver cobranças válidas, retornar erro
+      if (cobrancasValidas.length === 0) {
+        const mensagemErro = cobrancasInvalidas.length > 0
+          ? `Todas as cobranças são inválidas. ${cobrancasInvalidas.length} cobrança(s) rejeitada(s): ${cobrancasInvalidas.map(c => c.motivo).join(', ')}`
+          : 'Nenhuma cobrança válida para envio'
+        return {
+          success: false,
+          error: mensagemErro
+        }
+      }
 
       // Formatar payload exatamente como no cURL fornecido
       const payload = {
         cnpj: cnpj || null, // Permitir null como no exemplo
         comando: "atualizar_cobranca",
         nomeSistema,
-        cobrancas: cobrancas.map(cobranca => ({
-          id: cobranca.id,
-          empresa: cobranca.empresa || "1",
-          codigo: cobranca.codigo || "",
-          nome: cobranca.nome,
-          celular: cobranca.celular || "",
-          codcobranca: cobranca.codcobranca || "",
-          vencimento: cobranca.vencimento,
-          valor: cobranca.valor?.toString() || "0",
-          parcela: cobranca.parcela || "1",
-          created_at: cobranca.created_at || new Date().toISOString(),
-          empresa_id: cobranca.empresa_id?.toString() || "7",
-          enviou: true, // Sempre true quando enviando
-          mensagem: cobranca.mensagem || ""
-        }))
+        cobrancas: cobrancasValidas.map(cobranca => {
+          // Garantir que empresa_id seja válido (usar da cobrança ou do parâmetro)
+          const empresaIdFinal = cobranca.empresa_id || empresaId
+          if (!empresaIdFinal) {
+            throw new Error(`empresa_id não encontrado para cobrança ${cobranca.id}`)
+          }
+
+          return {
+            id: cobranca.id,
+            empresa: cobranca.empresa || "1",
+            codigo: cobranca.codigo || "",
+            nome: cobranca.nome,
+            celular: cobranca.celular || "",
+            codcobranca: cobranca.codcobranca, // Já validado acima, não pode ser vazio
+            vencimento: cobranca.vencimento,
+            valor: cobranca.valor?.toString() || "0",
+            parcela: cobranca.parcela?.toString() || "1",
+            created_at: cobranca.created_at || new Date().toISOString(),
+            empresa_id: empresaIdFinal.toString(), // Garantir que é um número válido
+            enviou: true, // Sempre true quando enviando
+            mensagem: cobranca.mensagem || ""
+          }
+        })
+      }
+
+      // Se algumas cobranças foram filtradas, informar no log
+      if (cobrancasInvalidas.length > 0) {
+        console.warn(`⚠️ ${cobrancasInvalidas.length} cobrança(s) filtrada(s) por serem inválidas. ${cobrancasValidas.length} cobrança(s) válida(s) serão enviadas.`)
       }
 
       console.log('📤 Payload sendo enviado:', JSON.stringify(payload, null, 2))
@@ -567,19 +624,70 @@ export const api = {
         headers: Object.fromEntries(response.headers.entries())
       })
 
+      // Tentar parsear a resposta como JSON primeiro
+      const responseText = await response.text()
+      let responseData: any = null
+
+      try {
+        responseData = JSON.parse(responseText)
+      } catch {
+        // Se não for JSON, usar o texto como está
+        responseData = responseText
+      }
+
       if (!response.ok) {
-        const errorText = await response.text()
         console.error('❌ Erro na resposta do webhook:', {
           status: response.status,
           statusText: response.statusText,
-          body: errorText
+          body: responseData
         })
-        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+
+        // Se a resposta contém detalhes de erros do backend, formatar de forma mais clara
+        if (responseData && typeof responseData === 'object') {
+          if (responseData.detalhes_erros && Array.isArray(responseData.detalhes_erros)) {
+            const errosFormatados = responseData.detalhes_erros
+              .slice(0, 5) // Limitar a 5 erros para não sobrecarregar a mensagem
+              .map((e: any) => `"${e.cobranca?.nome || 'Desconhecido'}": ${e.erro}`)
+              .join('; ')
+            
+            const mensagemErro = `Erro ao processar cobranças: ${responseData.erros || 0} erro(s). ${responseData.processadas || 0} processada(s). ${errosFormatados}${responseData.detalhes_erros.length > 5 ? '...' : ''}`
+            throw new Error(mensagemErro)
+          } else if (responseData.sucesso === false || responseData.error) {
+            throw new Error(responseData.error || responseData.mensagem || 'Erro desconhecido do servidor')
+          }
+        }
+
+        throw new Error(`HTTP error! status: ${response.status} - ${typeof responseData === 'string' ? responseData : JSON.stringify(responseData)}`)
       }
 
-      const data = await response.json()
-      console.log('✅ Resposta bem-sucedida do webhook:', data)
-      return { success: true, data }
+      console.log('✅ Resposta bem-sucedida do webhook:', responseData)
+      
+      // Se a resposta contém informações sobre processamento, verificar se houve erros
+      if (responseData && typeof responseData === 'object') {
+        if (responseData.erros && responseData.erros > 0) {
+          console.warn('⚠️ Algumas cobranças foram processadas com erro:', {
+            processadas: responseData.processadas,
+            erros: responseData.erros,
+            detalhes: responseData.detalhes_erros?.slice(0, 3) // Mostrar apenas os primeiros 3 erros no log
+          })
+        }
+      }
+
+      // Adicionar informações sobre cobranças filtradas antes do envio
+      const responseWithMetadata = {
+        ...responseData,
+        _metadata: {
+          cobrancasEnviadas: cobrancasValidas.length,
+          cobrancasFiltradas: cobrancasInvalidas.length,
+          cobrancasInvalidas: cobrancasInvalidas.map(c => ({
+            id: c.cobranca.id,
+            nome: c.cobranca.nome,
+            motivo: c.motivo
+          }))
+        }
+      }
+
+      return { success: true, data: responseWithMetadata }
     } catch (error) {
       console.error('💥 Erro na função enviarMensagensCobrancas:', error)
       return { 

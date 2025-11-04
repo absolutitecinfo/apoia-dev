@@ -497,29 +497,44 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
       })
 
       // Chama o webhook para envio das mensagens
-      const result = await api.enviarMensagensCobrancas(empresaAtual.cnpj, cobrancasParaEnvio, empresaAtual.nome_sistema || '')
+      const result = await api.enviarMensagensCobrancas(empresaAtual.cnpj, cobrancasParaEnvio, empresaAtual.nome_sistema || '', empresaAtual.id)
       
       if (result.success) {
-        showToast(`🎉 ${cobrancasParaEnvio.length} mensagens de cobrança enviadas e removidas da lista!`, 'success')
+        // Verificar se algumas cobranças foram filtradas antes do envio
+        const metadata = (result.data as any)?._metadata
+        const cobrancasFiltradas = metadata?.cobrancasFiltradas || 0
+        const cobrancasEnviadasCount = metadata?.cobrancasEnviadas || cobrancasParaEnvio.length
+
+        // Filtrar cobranças inválidas da lista de atualização (usar apenas as que foram realmente enviadas)
+        const idsInvalidas = new Set(metadata?.cobrancasInvalidas?.map((c: any) => c.id) || [])
+        const cobrancasEnviadas = cobrancasParaEnvio.filter(c => !idsInvalidas.has(c.id))
+
+        if (cobrancasFiltradas > 0) {
+          showToast(`⚠️ ${cobrancasFiltradas} cobrança(s) filtrada(s) por serem inválidas (sem codcobranca ou empresa_id). ${cobrancasEnviadasCount} mensagem(s) enviada(s).`, 'warning')
+        } else {
+          showToast(`🎉 ${cobrancasEnviadasCount} mensagens de cobrança enviadas e removidas da lista!`, 'success')
+        }
         
-        // Atualiza o status no Supabase para cada cobrança enviada
-        const updatePromises = cobrancasParaEnvio.map(cobranca => 
+        // Atualiza o status no Supabase apenas para cobranças realmente enviadas
+        const updatePromises = cobrancasEnviadas.map(cobranca => 
           api.atualizarStatusEnvio('cobranca', cobranca.id, true, cobranca.mensagem)
         )
         
         const updateResults = await Promise.all(updatePromises)
         const successCount = updateResults.filter(r => r.success).length
         
-        if (successCount === cobrancasParaEnvio.length) {
-          // Atualiza o estado local
+        if (successCount === cobrancasEnviadas.length && cobrancasEnviadas.length > 0) {
+          // Atualiza o estado local apenas para cobranças realmente enviadas
           setCobrancas(prev => prev.map(c => 
-            cobrancasParaEnvio.find(cp => cp.id === c.id) 
+            cobrancasEnviadas.find(cp => cp.id === c.id) 
               ? { ...c, enviou: true, mensagem: c.mensagem || mensagemPadrao, data_envio: new Date().toISOString() }
               : c
           ))
-          showToast("Status atualizado no banco de dados", 'success')
-        } else {
-          showToast(`Mensagens enviadas, mas apenas ${successCount}/${cobrancasParaEnvio.length} status atualizados no banco`, 'warning')
+          if (cobrancasFiltradas === 0) {
+            showToast("Status atualizado no banco de dados", 'success')
+          }
+        } else if (cobrancasEnviadas.length > 0) {
+          showToast(`Mensagens enviadas, mas apenas ${successCount}/${cobrancasEnviadas.length} status atualizados no banco`, 'warning')
         }
       } else {
         showToast(`Erro ao enviar mensagens: ${result.error}`, 'error')
@@ -646,10 +661,22 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
         mensagem: mensagemProcessada
       }
 
-      const result = await api.enviarMensagensCobrancas(empresaAtual.cnpj, [cobrancaComMensagem], empresaAtual.nome_sistema || '')
+      const result = await api.enviarMensagensCobrancas(empresaAtual.cnpj, [cobrancaComMensagem], empresaAtual.nome_sistema || '', empresaAtual.id)
       
       if (result.success) {
-        // Atualiza o status no Supabase
+        // Verificar se a cobrança foi realmente enviada (não foi filtrada)
+        const metadata = (result.data as any)?._metadata
+        const cobrancasFiltradas = metadata?.cobrancasFiltradas || 0
+        const cobrancaFoiFiltrada = metadata?.cobrancasInvalidas?.some((c: any) => c.id === cobranca.id) || false
+
+        if (cobrancaFoiFiltrada) {
+          const motivo = metadata?.cobrancasInvalidas?.find((c: any) => c.id === cobranca.id)?.motivo || 'dados inválidos'
+          showToast(`⚠️ Cobrança não enviada: ${motivo}`, 'warning')
+          setLoadingIndividual(null)
+          return
+        }
+
+        // Atualiza o status no Supabase apenas se foi realmente enviada
         const updateResult = await api.atualizarStatusEnvio('cobranca', cobranca.id, true, cobrancaComMensagem.mensagem)
         
         if (updateResult.success) {
