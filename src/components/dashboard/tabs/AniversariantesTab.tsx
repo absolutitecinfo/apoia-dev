@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { DashboardTab } from "../DashboardTab"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -284,6 +284,18 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
         showToast(`⚠️ ${aniversariantesFiltradas} aniversariante(s) ignorado(s) por não ter número válido`, 'warning')
       }
 
+      // Salvar celular e mensagem no banco antes de enviar (garantir que está salvo)
+      const savePromises = aniversariantesParaEnvio.map(async (a) => {
+        await salvarCelularNoBanco(a.id, a.celular || '')
+        await salvarMensagemNoBanco(a.id, a.mensagem || mensagemPadrao)
+      })
+      await Promise.all(savePromises)
+      
+      // Remover da lista de linhas em edição após salvar
+      aniversariantesParaEnvio.forEach(a => {
+        linhasEmEdicao.current.delete(a.id)
+      })
+
       // Chama o webhook para envio das mensagens
       const result = await api.enviarMensagensAniversariantes(empresaAtual.cnpj, aniversariantesParaEnvio, empresaAtual.nome_sistema || '')
       
@@ -320,15 +332,84 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
     }
   }
 
-  // Função para atualizar mensagem individual
+  // Função para salvar mensagem no banco
+  const salvarMensagemNoBanco = async (id: number, novaMensagem: string) => {
+    try {
+      // Marcar como atualização própria ANTES de salvar (importante para evitar race condition)
+      atualizacoesPropriasMensagem.current.add(id)
+      console.log('📝 Marcando atualização de mensagem como própria:', id)
+      
+      const result = await api.atualizarMensagem('aniversariante', id, novaMensagem)
+      if (result.success) {
+        console.log('✅ Mensagem atualizada no banco:', id)
+        
+        // Remover da lista de atualizações próprias após 5 segundos (tempo suficiente para Realtime processar)
+        setTimeout(() => {
+          atualizacoesPropriasMensagem.current.delete(id)
+          console.log('🗑️ Removendo marcação de atualização própria de mensagem:', id)
+        }, 5000)
+      } else {
+        console.error('❌ Erro ao atualizar mensagem:', result.error)
+        showToast(`Erro ao salvar mensagem: ${result.error}`, 'error')
+        atualizacoesPropriasMensagem.current.delete(id)
+      }
+    } catch (error) {
+      console.error('❌ Erro ao atualizar mensagem:', error)
+      showToast('Erro ao salvar mensagem no banco de dados', 'error')
+      atualizacoesPropriasMensagem.current.delete(id)
+    }
+  }
+  
   const atualizarMensagem = (id: number, novaMensagem: string) => {
+    // Marcar linha como em edição (para evitar que Realtime interfira durante digitação)
+    linhasEmEdicao.current.add(id)
+    
+    // Atualizar estado local imediatamente
     setAniversariantes(prev => 
       prev.map(a => a.id === id ? { ...a, mensagem: novaMensagem } : a)
     )
   }
 
-  // Função para atualizar celular individual
+  // Rastrear atualizações de celular que fizemos para evitar recarregar tudo via Realtime
+  const atualizacoesPropriasCelular = useRef<Set<number>>(new Set())
+  // Rastrear atualizações de mensagem que fizemos para evitar recarregar tudo via Realtime
+  const atualizacoesPropriasMensagem = useRef<Set<number>>(new Set())
+  // Rastrear linhas que estão sendo editadas (para evitar recarregar enquanto o usuário está editando)
+  const linhasEmEdicao = useRef<Set<number>>(new Set())
+  
+  // Função para salvar celular no banco
+  const salvarCelularNoBanco = async (id: number, novoCelular: string) => {
+    try {
+      // Marcar como atualização própria ANTES de salvar (importante para evitar race condition)
+      atualizacoesPropriasCelular.current.add(id)
+      console.log('📝 Marcando atualização de celular como própria:', id)
+      
+      const result = await api.atualizarCelular('aniversariante', id, novoCelular)
+      if (result.success) {
+        console.log('✅ Celular atualizado no banco:', id, novoCelular)
+        
+        // Remover da lista de atualizações próprias após 5 segundos (tempo suficiente para Realtime processar)
+        setTimeout(() => {
+          atualizacoesPropriasCelular.current.delete(id)
+          console.log('🗑️ Removendo marcação de atualização própria de celular:', id)
+        }, 5000)
+      } else {
+        console.error('❌ Erro ao atualizar celular:', result.error)
+        showToast(`Erro ao salvar celular: ${result.error}`, 'error')
+        atualizacoesPropriasCelular.current.delete(id)
+      }
+    } catch (error) {
+      console.error('❌ Erro ao atualizar celular:', error)
+      showToast('Erro ao salvar celular no banco de dados', 'error')
+      atualizacoesPropriasCelular.current.delete(id)
+    }
+  }
+  
   const atualizarCelular = (id: number, novoCelular: string) => {
+    // Marcar linha como em edição (para evitar que Realtime interfira durante digitação)
+    linhasEmEdicao.current.add(id)
+    
+    // Atualizar estado local imediatamente
     setAniversariantes(prev => 
       prev.map(a => a.id === id ? { ...a, celular: novoCelular } : a)
     )
@@ -346,8 +427,16 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
       // Verificar se há um número válido para envio
       if (!aniversariante.celular || aniversariante.celular.trim().length === 0) {
         showToast("Não há número válido para envio desta mensagem", 'error')
+        setLoadingIndividual(null)
         return
       }
+
+      // Salvar celular e mensagem no banco antes de enviar (garantir que está salvo)
+      await salvarCelularNoBanco(aniversariante.id, aniversariante.celular)
+      await salvarMensagemNoBanco(aniversariante.id, aniversariante.mensagem || mensagemPadrao)
+      
+      // Remover da lista de linhas em edição após salvar
+      linhasEmEdicao.current.delete(aniversariante.id)
 
       const mensagemBase = aniversariante.mensagem || mensagemPadrao
       const mensagemProcessada = processarMensagem(mensagemBase, aniversariante)
@@ -657,7 +746,61 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
             const isUpdate = payload.eventType === 'UPDATE'
             const isDelete = payload.eventType === 'DELETE'
             
-            // Atualizar dados automaticamente quando houver mudanças
+            // Se for UPDATE, verificar se é apenas atualização de celular ou mensagem que fizemos
+            if (isUpdate && payload.new) {
+              const updatedId = payload.new.id as number
+              const oldData = payload.old as any
+              const newData = payload.new as any
+              
+              // Verificar se foi uma atualização própria (independente de quais campos mudaram)
+              const isCelularUpdate = atualizacoesPropriasCelular.current.has(updatedId)
+              const isMensagemUpdate = atualizacoesPropriasMensagem.current.has(updatedId)
+              
+              // Verificar quais campos mudaram
+              const celularMudou = oldData?.celular !== newData?.celular
+              const mensagemMudou = oldData?.mensagem !== newData?.mensagem
+              
+              // Verificar se apenas celular ou mensagem mudaram (ignorar outros campos como timestamps)
+              const camposMudaram = Object.keys(newData).filter(key => {
+                // Ignorar campos que podem mudar automaticamente
+                if (key === 'updated_at' || key === 'created_at' || key === 'data_envio') return false
+                return oldData?.[key] !== newData?.[key]
+              })
+              
+              // Se é uma atualização própria de celular e apenas o celular mudou
+              if (isCelularUpdate && celularMudou && camposMudaram.length === 1 && camposMudaram[0] === 'celular') {
+                console.log('📱 Atualização de celular própria detectada, ignorando Realtime')
+                // Atualizar apenas o estado local sem recarregar tudo
+                setAniversariantes(prev => 
+                  prev.map(a => a.id === updatedId ? { ...a, celular: newData.celular } : a)
+                )
+                return // Não recarregar tudo
+              }
+              
+              // Se é uma atualização própria de mensagem e apenas a mensagem mudou
+              if (isMensagemUpdate && mensagemMudou && camposMudaram.length === 1 && camposMudaram[0] === 'mensagem') {
+                console.log('💬 Atualização de mensagem própria detectada, ignorando Realtime')
+                // Atualizar apenas o estado local sem recarregar tudo
+                setAniversariantes(prev => 
+                  prev.map(a => a.id === updatedId ? { ...a, mensagem: newData.mensagem } : a)
+                )
+                return // Não recarregar tudo
+              }
+              
+              // Se é uma atualização própria mas outros campos também mudaram, ainda assim ignorar para evitar recarregar
+              if ((isCelularUpdate || isMensagemUpdate) && (celularMudou || mensagemMudou)) {
+                console.log('📝 Atualização própria detectada (celular ou mensagem), ignorando Realtime para evitar recarregar')
+                return // Não recarregar tudo
+              }
+              
+              // Se a linha está sendo editada (usuário pode estar digitando), ignorar completamente
+              if (linhasEmEdicao.current.has(updatedId)) {
+                console.log('✏️ Linha em edição detectada, ignorando Realtime para não interromper digitação')
+                return // Não recarregar tudo
+              }
+            }
+            
+            // Para INSERT, DELETE ou outros UPDATEs, recarregar normalmente
             setTimeout(() => {
               console.log('🔄 Atualizando dados após mudança no Realtime...')
               buscarAniversariantesSupabase(false, true) // silentMode = true
@@ -1160,17 +1303,17 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
                         {formatarDataHoraBrasil(aniversariante.created_at).hora}
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-w-[300px] md:max-w-[400px] lg:max-w-[500px]">
                       <div className="space-y-2">
                         <Textarea
                           value={aniversariante.mensagem || ''}
                           onChange={(e) => atualizarMensagem(aniversariante.id, e.target.value)}
                           rows={2}
-                          className="min-w-[200px]"
+                          className="w-full min-w-[200px] max-w-full resize-y overflow-auto text-sm md:text-base"
                           placeholder={mensagemPadrao}
                         />
                         {(aniversariante.mensagem || mensagemPadrao).includes('[nome]') && (
-                          <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
+                          <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded break-words overflow-wrap-anywhere">
                             <strong>Preview:</strong> "{processarMensagem(aniversariante.mensagem || mensagemPadrao, aniversariante)}"
                           </div>
                         )}

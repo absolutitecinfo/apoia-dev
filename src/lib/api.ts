@@ -476,7 +476,9 @@ export const api = {
         comando: comandoMap[tipoCobranca],
         nomeSistema,
         data_inicial: dataInicial,
-        data_final: dataFinal
+        data_final: dataFinal,
+        // URL da Edge Function para callback após processamento
+        callback_url: `${process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://bslsxolmfzrvprghxfrr.supabase.co'}/functions/v1/cobranca`
       }
 
       // Adicionar timestamp para quebrar cache em chamadas customizadas
@@ -580,6 +582,66 @@ export const api = {
       return { success: true, data }
     } catch (error) {
       console.error('💥 Erro na função enviarMensagensCobrancas:', error)
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
+      }
+    }
+  },
+
+  // Atualizar celular (Supabase)
+  async atualizarCelular(
+    tipo: 'aniversariante' | 'cobranca', 
+    id: string | number, 
+    celular: string
+  ): Promise<ApiResponse<any>> {
+    try {
+      const tabela = tipo === 'aniversariante' ? 'aniversariantes' : 'cobranca'
+      
+      const { data, error } = await supabase
+        .from(tabela)
+        .update({ celular: celular || null })
+        .eq('id', id)
+        .select()
+
+      if (error) {
+        console.error('Erro ao atualizar celular:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, data: data?.[0] }
+    } catch (error) {
+      console.error('Erro ao atualizar celular:', error)
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
+      }
+    }
+  },
+
+  // Atualizar mensagem (Supabase)
+  async atualizarMensagem(
+    tipo: 'aniversariante' | 'cobranca', 
+    id: string | number, 
+    mensagem: string
+  ): Promise<ApiResponse<any>> {
+    try {
+      const tabela = tipo === 'aniversariante' ? 'aniversariantes' : 'cobranca'
+      
+      const { data, error } = await supabase
+        .from(tabela)
+        .update({ mensagem: mensagem || null })
+        .eq('id', id)
+        .select()
+
+      if (error) {
+        console.error('Erro ao atualizar mensagem:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, data: data?.[0] }
+    } catch (error) {
+      console.error('Erro ao atualizar mensagem:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Erro desconhecido'

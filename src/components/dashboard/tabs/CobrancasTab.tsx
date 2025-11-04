@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { DashboardTab } from "../DashboardTab"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -174,11 +174,6 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
   const calcularEstatisticas = (filtro: typeof filtroEstatisticas) => {
     const dataLimite = getDataLimite(filtro)
     
-    // Garantir que apenas dados da empresa atual sejam considerados nas estatísticas
-    const cobrancasDaEmpresa = empresaAtual?.id 
-      ? cobrancas.filter(c => c.empresa_id === empresaAtual.id)
-      : cobrancas // Se não houver empresaAtual ainda, usar todos (mas isso não deve acontecer)
-    
     // Função auxiliar para extrair apenas a data (sem horas) no timezone do Brasil
     const getDataBrasilSemHora = (timestamp: string | Date): Date => {
       const data = timestamp instanceof Date ? timestamp : new Date(timestamp)
@@ -195,9 +190,46 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
       return new Date(ano, mes, dia, 0, 0, 0, 0)
     }
 
+    // Garantir que apenas dados da empresa atual sejam considerados nas estatísticas
+    // Converter ambos para número para garantir comparação correta
+    const empresaId = empresaAtual?.id ? Number(empresaAtual.id) : null
+    const cobrancasDaEmpresa = empresaId !== null
+      ? cobrancas.filter(c => {
+          const cobrancaEmpresaId = c.empresa_id !== null ? Number(c.empresa_id) : null
+          return cobrancaEmpresaId === empresaId
+        })
+      : []
+    
+    // Debug: Log para verificar o que está sendo filtrado
+    console.log('📊 Calculando estatísticas:', {
+      empresaId: empresaId,
+      empresaAtual: empresaAtual,
+      totalCobrancas: cobrancas.length,
+      cobrancasDaEmpresa: cobrancasDaEmpresa.length,
+      filtro: filtroEstatisticas,
+      dataLimite: dataLimite.toISOString(),
+      amostraCobrancas: cobrancas.slice(0, 3).map(c => ({
+        id: c.id,
+        nome: c.nome,
+        empresa_id: c.empresa_id,
+        empresa_id_tipo: typeof c.empresa_id,
+        created_at: c.created_at
+      }))
+    })
+
+    // Se filtro for "todos", não filtrar por data - contar todos
+    const isFiltroTodos = filtro === 'todos'
+    
     // Converter created_at para data no timezone do Brasil para comparação
     const coletadosNoPeriodo = cobrancasDaEmpresa.filter(c => {
-      if (!c.created_at) return false
+      if (!c.created_at) {
+        console.log('⚠️ Cobrança sem created_at:', c.id, c.nome)
+        return false
+      }
+      
+      // Se filtro é "todos", aceitar todas as cobranças que têm created_at
+      if (isFiltroTodos) return true
+      
       const dataCreatedBrasil = getDataBrasilSemHora(c.created_at)
       const dataLimiteBrasil = getDataBrasilSemHora(dataLimite)
       return dataCreatedBrasil >= dataLimiteBrasil
@@ -205,6 +237,10 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
     
     const enviadosNoPeriodo = cobrancasDaEmpresa.filter(c => {
       if (!c.data_envio) return false
+      
+      // Se filtro é "todos", aceitar todas as cobranças que têm data_envio
+      if (isFiltroTodos) return true
+      
       const dataEnvioBrasil = getDataBrasilSemHora(c.data_envio)
       const dataLimiteBrasil = getDataBrasilSemHora(dataLimite)
       return dataEnvioBrasil >= dataLimiteBrasil
@@ -212,6 +248,10 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
     
     const pendentesPeriodo = cobrancasDaEmpresa.filter(c => {
       if (!c.created_at || c.enviou) return false
+      
+      // Se filtro é "todos", aceitar todas as cobranças pendentes
+      if (isFiltroTodos) return true
+      
       const dataCreatedBrasil = getDataBrasilSemHora(c.created_at)
       const dataLimiteBrasil = getDataBrasilSemHora(dataLimite)
       return dataCreatedBrasil >= dataLimiteBrasil
@@ -220,6 +260,16 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
     const valorTotalPeriodo = coletadosNoPeriodo.reduce((sum, c) => sum + (c.valor || 0), 0)
     const valorEnviadoPeriodo = enviadosNoPeriodo.reduce((sum, c) => sum + (c.valor || 0), 0)
     const valorPendentePeriodo = pendentesPeriodo.reduce((sum, c) => sum + (c.valor || 0), 0)
+    
+    console.log('📊 Estatísticas calculadas:', {
+      coletados: coletadosNoPeriodo.length,
+      enviados: enviadosNoPeriodo.length,
+      pendentes: pendentesPeriodo.length,
+      total: cobrancasDaEmpresa.length,
+      valorTotal: valorTotalPeriodo,
+      valorEnviado: valorEnviadoPeriodo,
+      valorPendente: valorPendentePeriodo
+    })
     
     return {
       coletados: coletadosNoPeriodo.length,
@@ -434,6 +484,18 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
         showToast(`⚠️ ${cobrancasFiltradas} cobrança(s) ignorada(s) por não ter número válido`, 'warning')
       }
 
+      // Salvar celular e mensagem no banco antes de enviar (garantir que está salvo)
+      const savePromises = cobrancasParaEnvio.map(async (c) => {
+        await salvarCelularNoBanco(c.id, c.celular || '')
+        await salvarMensagemNoBanco(c.id, c.mensagem || mensagemPadrao)
+      })
+      await Promise.all(savePromises)
+      
+      // Remover da lista de linhas em edição após salvar
+      cobrancasParaEnvio.forEach(c => {
+        linhasEmEdicao.current.delete(c.id)
+      })
+
       // Chama o webhook para envio das mensagens
       const result = await api.enviarMensagensCobrancas(empresaAtual.cnpj, cobrancasParaEnvio, empresaAtual.nome_sistema || '')
       
@@ -470,15 +532,84 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
     }
   }
 
-  // Função para atualizar mensagem individual
+  // Função para salvar mensagem no banco
+  const salvarMensagemNoBanco = async (id: string, novaMensagem: string) => {
+    try {
+      // Marcar como atualização própria ANTES de salvar (importante para evitar race condition)
+      atualizacoesPropriasMensagem.current.add(id)
+      console.log('📝 Marcando atualização de mensagem como própria:', id)
+      
+      const result = await api.atualizarMensagem('cobranca', id, novaMensagem)
+      if (result.success) {
+        console.log('✅ Mensagem atualizada no banco:', id)
+        
+        // Remover da lista de atualizações próprias após 5 segundos (tempo suficiente para Realtime processar)
+        setTimeout(() => {
+          atualizacoesPropriasMensagem.current.delete(id)
+          console.log('🗑️ Removendo marcação de atualização própria de mensagem:', id)
+        }, 5000)
+      } else {
+        console.error('❌ Erro ao atualizar mensagem:', result.error)
+        showToast(`Erro ao salvar mensagem: ${result.error}`, 'error')
+        atualizacoesPropriasMensagem.current.delete(id)
+      }
+    } catch (error) {
+      console.error('❌ Erro ao atualizar mensagem:', error)
+      showToast('Erro ao salvar mensagem no banco de dados', 'error')
+      atualizacoesPropriasMensagem.current.delete(id)
+    }
+  }
+  
   const atualizarMensagem = (id: string, novaMensagem: string) => {
+    // Marcar linha como em edição (para evitar que Realtime interfira durante digitação)
+    linhasEmEdicao.current.add(id)
+    
+    // Atualizar estado local imediatamente
     setCobrancas(prev => 
       prev.map(c => c.id === id ? { ...c, mensagem: novaMensagem } : c)
     )
   }
 
-  // Função para atualizar celular individual
+  // Rastrear atualizações de celular que fizemos para evitar recarregar tudo via Realtime
+  const atualizacoesPropriasCelular = useRef<Set<string>>(new Set())
+  // Rastrear atualizações de mensagem que fizemos para evitar recarregar tudo via Realtime
+  const atualizacoesPropriasMensagem = useRef<Set<string>>(new Set())
+  // Rastrear linhas que estão sendo editadas (para evitar recarregar enquanto o usuário está editando)
+  const linhasEmEdicao = useRef<Set<string>>(new Set())
+  
+  // Função para salvar celular no banco
+  const salvarCelularNoBanco = async (id: string, novoCelular: string) => {
+    try {
+      // Marcar como atualização própria ANTES de salvar (importante para evitar race condition)
+      atualizacoesPropriasCelular.current.add(id)
+      console.log('📝 Marcando atualização de celular como própria:', id)
+      
+      const result = await api.atualizarCelular('cobranca', id, novoCelular)
+      if (result.success) {
+        console.log('✅ Celular atualizado no banco:', id, novoCelular)
+        
+        // Remover da lista de atualizações próprias após 5 segundos (tempo suficiente para Realtime processar)
+        setTimeout(() => {
+          atualizacoesPropriasCelular.current.delete(id)
+          console.log('🗑️ Removendo marcação de atualização própria de celular:', id)
+        }, 5000)
+      } else {
+        console.error('❌ Erro ao atualizar celular:', result.error)
+        showToast(`Erro ao salvar celular: ${result.error}`, 'error')
+        atualizacoesPropriasCelular.current.delete(id)
+      }
+    } catch (error) {
+      console.error('❌ Erro ao atualizar celular:', error)
+      showToast('Erro ao salvar celular no banco de dados', 'error')
+      atualizacoesPropriasCelular.current.delete(id)
+    }
+  }
+  
   const atualizarCelular = (id: string, novoCelular: string) => {
+    // Marcar linha como em edição (para evitar que Realtime interfira durante digitação)
+    linhasEmEdicao.current.add(id)
+    
+    // Atualizar estado local imediatamente
     setCobrancas(prev => 
       prev.map(c => c.id === id ? { ...c, celular: novoCelular } : c)
     )
@@ -496,8 +627,16 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
       // Verificar se há um número válido para envio
       if (!cobranca.celular || cobranca.celular.trim().length === 0) {
         showToast("Não há número válido para envio desta cobrança", 'error')
+        setLoadingIndividual(null)
         return
       }
+
+      // Salvar celular e mensagem no banco antes de enviar (garantir que está salvo)
+      await salvarCelularNoBanco(cobranca.id, cobranca.celular)
+      await salvarMensagemNoBanco(cobranca.id, cobranca.mensagem || mensagemPadrao)
+      
+      // Remover da lista de linhas em edição após salvar
+      linhasEmEdicao.current.delete(cobranca.id)
 
       const mensagemBase = cobranca.mensagem || mensagemPadrao
       const mensagemProcessada = processarMensagem(mensagemBase, cobranca)
@@ -726,7 +865,58 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
             const isInsert = payload.eventType === 'INSERT'
             const isUpdate = payload.eventType === 'UPDATE'
             
-            // Atualizar dados automaticamente quando houver mudanças
+            // Se for UPDATE, verificar se é apenas atualização de celular ou mensagem que fizemos
+            if (isUpdate && payload.new) {
+              const updatedId = payload.new.id as string
+              const oldData = payload.old as any
+              const newData = payload.new as any
+              
+              // PRIMEIRA VERIFICAÇÃO: Se a linha está sendo editada (usuário pode estar digitando), ignorar completamente
+              // Isso deve ser a primeira verificação para evitar sobrescrever valores durante a digitação
+              if (linhasEmEdicao.current.has(updatedId)) {
+                console.log('✏️ Linha em edição detectada, ignorando Realtime para não interromper digitação')
+                return // Não recarregar tudo e não atualizar estado
+              }
+              
+              // Verificar se foi uma atualização própria (independente de quais campos mudaram)
+              const isCelularUpdate = atualizacoesPropriasCelular.current.has(updatedId)
+              const isMensagemUpdate = atualizacoesPropriasMensagem.current.has(updatedId)
+              
+              // Verificar quais campos mudaram
+              const celularMudou = oldData?.celular !== newData?.celular
+              const mensagemMudou = oldData?.mensagem !== newData?.mensagem
+              
+              // Verificar se apenas celular ou mensagem mudaram (ignorar outros campos como timestamps)
+              const camposMudaram = Object.keys(newData).filter(key => {
+                // Ignorar campos que podem mudar automaticamente
+                if (key === 'updated_at' || key === 'created_at' || key === 'data_envio') return false
+                return oldData?.[key] !== newData?.[key]
+              })
+              
+              // Se é uma atualização própria de celular e apenas o celular mudou
+              if (isCelularUpdate && celularMudou && camposMudaram.length === 1 && camposMudaram[0] === 'celular') {
+                console.log('📱 Atualização de celular própria detectada, ignorando Realtime')
+                // NÃO atualizar estado local aqui - a linha pode estar sendo editada
+                // O estado local já está atualizado pelo onChange
+                return // Não recarregar tudo
+              }
+              
+              // Se é uma atualização própria de mensagem e apenas a mensagem mudou
+              if (isMensagemUpdate && mensagemMudou && camposMudaram.length === 1 && camposMudaram[0] === 'mensagem') {
+                console.log('💬 Atualização de mensagem própria detectada, ignorando Realtime')
+                // NÃO atualizar estado local aqui - a linha pode estar sendo editada
+                // O estado local já está atualizado pelo onChange
+                return // Não recarregar tudo
+              }
+              
+              // Se é uma atualização própria mas outros campos também mudaram, ainda assim ignorar para evitar recarregar
+              if ((isCelularUpdate || isMensagemUpdate) && (celularMudou || mensagemMudou)) {
+                console.log('📝 Atualização própria detectada (celular ou mensagem), ignorando Realtime para evitar recarregar')
+                return // Não recarregar tudo
+              }
+            }
+            
+            // Para INSERT ou outros UPDATEs, recarregar normalmente
             setTimeout(() => {
               console.log('🔄 Atualizando dados após mudança no Realtime...')
               buscarCobrancasSupabase(false, true) // silentMode = true
@@ -1256,17 +1446,17 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
                           {formatarDataHoraBrasil(cobranca.created_at).hora}
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="max-w-[300px] md:max-w-[400px] lg:max-w-[500px]">
                         <div className="space-y-2">
                           <Textarea
                             value={cobranca.mensagem || ''}
                             onChange={(e) => atualizarMensagem(cobranca.id, e.target.value)}
                             rows={2}
-                            className="min-w-[250px]"
+                            className="w-full min-w-[200px] max-w-full resize-y overflow-auto text-sm md:text-base"
                             placeholder={mensagemPadrao}
                           />
                           {(cobranca.mensagem || mensagemPadrao).includes('[') && (
-                            <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
+                            <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded break-words overflow-wrap-anywhere">
                               <strong>Preview:</strong> "{processarMensagem(cobranca.mensagem || mensagemPadrao, cobranca)}"
                             </div>
                           )}
