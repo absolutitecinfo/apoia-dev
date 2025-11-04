@@ -200,22 +200,7 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
         })
       : []
     
-    // Debug: Log para verificar o que está sendo filtrado
-    console.log('📊 Calculando estatísticas:', {
-      empresaId: empresaId,
-      empresaAtual: empresaAtual,
-      totalCobrancas: cobrancas.length,
-      cobrancasDaEmpresa: cobrancasDaEmpresa.length,
-      filtro: filtroEstatisticas,
-      dataLimite: dataLimite.toISOString(),
-      amostraCobrancas: cobrancas.slice(0, 3).map(c => ({
-        id: c.id,
-        nome: c.nome,
-        empresa_id: c.empresa_id,
-        empresa_id_tipo: typeof c.empresa_id,
-        created_at: c.created_at
-      }))
-    })
+    // Debug: Log removido para evitar recálculos desnecessários durante digitação
 
     // Se filtro for "todos", não filtrar por data - contar todos
     const isFiltroTodos = filtro === 'todos'
@@ -261,16 +246,6 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
     const valorEnviadoPeriodo = enviadosNoPeriodo.reduce((sum, c) => sum + (c.valor || 0), 0)
     const valorPendentePeriodo = pendentesPeriodo.reduce((sum, c) => sum + (c.valor || 0), 0)
     
-    console.log('📊 Estatísticas calculadas:', {
-      coletados: coletadosNoPeriodo.length,
-      enviados: enviadosNoPeriodo.length,
-      pendentes: pendentesPeriodo.length,
-      total: cobrancasDaEmpresa.length,
-      valorTotal: valorTotalPeriodo,
-      valorEnviado: valorEnviadoPeriodo,
-      valorPendente: valorPendentePeriodo
-    })
-    
     return {
       coletados: coletadosNoPeriodo.length,
       enviados: enviadosNoPeriodo.length,
@@ -282,10 +257,22 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
     }
   }
 
-  // Calcular estatísticas apenas para a empresa atual, recalculando quando empresaAtual, cobrancas ou filtroEstatisticas mudarem
+  // Memoizar apenas os campos relevantes para estatísticas (não incluir celular/mensagem que mudam durante digitação)
+  const cobrancasStatsKey = useMemo(() => {
+    return JSON.stringify(cobrancas.map(c => ({
+      id: c.id,
+      empresa_id: c.empresa_id,
+      valor: c.valor,
+      enviou: c.enviou,
+      data_envio: c.data_envio,
+      created_at: c.created_at
+    })).sort((a, b) => a.id.localeCompare(b.id))) // Ordenar para garantir comparação estável
+  }, [cobrancas])
+
+  // Calcular estatísticas apenas quando campos relevantes mudarem (não quando celular/mensagem mudarem)
   const estatisticas = useMemo(() => {
     return calcularEstatisticas(filtroEstatisticas)
-  }, [filtroEstatisticas, cobrancas, empresaAtual?.id])
+  }, [filtroEstatisticas, cobrancasStatsKey, empresaAtual?.id])
 
   // Função para buscar cobranças (1ª chamada)
   const coletarCobrancas = async () => {
@@ -353,7 +340,39 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
       console.log('📋 Resultado completo da API:', result)
       
       if (result.success && result.data) {
-        setCobrancas(result.data)
+        // Verificar se os dados realmente mudaram antes de atualizar o estado
+        // Isso evita re-renderizações desnecessárias que travam o input
+        const dadosNovos = result.data
+        const dadosAtuais = cobrancas
+        
+        // Comparar por IDs e principais campos para evitar atualizações desnecessárias
+        // Criar um mapa de IDs para comparação mais eficiente
+        const mapaAtual = new Map(dadosAtuais.map(c => [c.id, c]))
+        const dadosMudaram = dadosNovos.length !== dadosAtuais.length || 
+          dadosNovos.some((nova: Cobranca) => {
+            const atual = mapaAtual.get(nova.id)
+            if (!atual) return true // Nova cobrança
+            // Comparar apenas campos relevantes para estatísticas (não incluir celular/mensagem que mudam durante digitação)
+            return nova.enviou !== atual.enviou ||
+                   nova.vencimento !== atual.vencimento ||
+                   nova.valor !== atual.valor ||
+                   nova.data_envio !== atual.data_envio ||
+                   nova.created_at !== atual.created_at
+          })
+        
+        // Se há linhas em edição, não atualizar para evitar interromper digitação
+        if (linhasEmEdicao.current.size > 0) {
+          console.log('⏸️ Linhas em edição detectadas, pulando atualização para não interromper digitação')
+          return
+        }
+        
+        // Só atualizar se os dados realmente mudaram (ignorar mudanças em celular/mensagem para evitar re-render durante digitação)
+        if (dadosMudaram) {
+          setCobrancas(result.data)
+        } else {
+          console.log('⏭️ Dados não mudaram, pulando atualização para evitar re-render')
+          return
+        }
         
         // Mensagem diferente para dados mockados vs dados reais
         const isMockData = result.data.some(c => 
@@ -579,10 +598,26 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
     // Marcar linha como em edição (para evitar que Realtime interfira durante digitação)
     linhasEmEdicao.current.add(id)
     
-    // Atualizar estado local imediatamente
-    setCobrancas(prev => 
-      prev.map(c => c.id === id ? { ...c, mensagem: novaMensagem } : c)
-    )
+    // Atualizar estado local imediatamente usando função de atualização
+    // Isso evita recálculo de estatísticas pois não cria novo array se apenas mensagem mudou
+    setCobrancas(prev => {
+      const index = prev.findIndex(c => c.id === id)
+      if (index === -1) return prev
+      
+      // Se apenas a mensagem mudou, não recriar o array inteiro (otimização)
+      const atual = prev[index]
+      if (atual.mensagem === novaMensagem) return prev
+      
+      // Criar novo array apenas com a cobrança modificada
+      const novasCobrancas = [...prev]
+      novasCobrancas[index] = { ...atual, mensagem: novaMensagem }
+      return novasCobrancas
+    })
+    
+    // Remover da lista de edição após 1 segundo de inatividade (debounce)
+    setTimeout(() => {
+      linhasEmEdicao.current.delete(id)
+    }, 1000)
   }
 
   // Rastrear atualizações de celular que fizemos para evitar recarregar tudo via Realtime
@@ -624,10 +659,26 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
     // Marcar linha como em edição (para evitar que Realtime interfira durante digitação)
     linhasEmEdicao.current.add(id)
     
-    // Atualizar estado local imediatamente
-    setCobrancas(prev => 
-      prev.map(c => c.id === id ? { ...c, celular: novoCelular } : c)
-    )
+    // Atualizar estado local imediatamente usando função de atualização
+    // Isso evita recálculo de estatísticas pois não cria novo array se apenas celular mudou
+    setCobrancas(prev => {
+      const index = prev.findIndex(c => c.id === id)
+      if (index === -1) return prev
+      
+      // Se apenas o celular mudou, não recriar o array inteiro (otimização)
+      const atual = prev[index]
+      if (atual.celular === novoCelular) return prev
+      
+      // Criar novo array apenas com a cobrança modificada
+      const novasCobrancas = [...prev]
+      novasCobrancas[index] = { ...atual, celular: novoCelular }
+      return novasCobrancas
+    })
+    
+    // Remover da lista de edição após 1 segundo de inatividade (debounce)
+    setTimeout(() => {
+      linhasEmEdicao.current.delete(id)
+    }, 1000)
   }
 
   // Função para enviar mensagem individual
@@ -840,8 +891,18 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
     }
   }, [empresaChave])
 
+  // Memoizar os IDs das cobranças para evitar recálculos desnecessários
+  const cobrancasIds = useMemo(() => {
+    return cobrancas.map(c => c.id).sort().join(',')
+  }, [cobrancasStatsKey])
+
   // Marcar todas as novas cobranças por padrão
   useEffect(() => {
+    // Verificar se há linhas em edição antes de atualizar seleções
+    if (linhasEmEdicao.current.size > 0) {
+      return
+    }
+    
     const novasPendentes = cobrancas
       .filter(c => !c.enviou && !cobrancasSelecionadas.has(c.id))
       .map(c => c.id)
@@ -853,16 +914,19 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
         return newSet
       })
     }
-  }, [cobrancas])
+  }, [cobrancasIds, cobrancasSelecionadas]) // Usar IDs memoizados em vez do array completo
 
+  // Memoizar o tamanho das cobranças para evitar recálculos desnecessários
+  const cobrancasLength = useMemo(() => cobrancas.length, [cobrancasStatsKey])
+  
   // Monitorar mudanças na lista de cobranças para fechar toast de processamento
   useEffect(() => {
-    if (cobrancas.length > 0 && toastMessage?.includes('Processando')) {
+    if (cobrancasLength > 0 && toastMessage?.includes('Processando')) {
       console.log('✅ Dados carregados, fechando toast de processamento')
       closeToast()
-      showToast(`✨ ${cobrancas.length} cobranças carregadas com sucesso!`, 'success')
+      showToast(`✨ ${cobrancasLength} cobranças carregadas com sucesso!`, 'success')
     }
-  }, [cobrancas.length, toastMessage])
+  }, [cobrancasLength, toastMessage])
 
   // Realtime subscription para cobranças + Polling de backup
   useEffect(() => {
@@ -944,7 +1008,19 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
             }
             
             // Para INSERT ou outros UPDATEs, recarregar normalmente
+            // MAS: Não recarregar se houver linhas em edição (usuário digitando)
+            if (linhasEmEdicao.current.size > 0) {
+              console.log('✏️ Linhas em edição detectadas no Realtime, ignorando atualização para não interromper digitação')
+              return
+            }
+            
             setTimeout(() => {
+              // Verificar novamente antes de recarregar (pode ter mudado durante o delay)
+              if (linhasEmEdicao.current.size > 0) {
+                console.log('✏️ Linhas em edição detectadas após delay, ignorando atualização')
+                return
+              }
+              
               console.log('🔄 Atualizando dados após mudança no Realtime...')
               buscarCobrancasSupabase(false, true) // silentMode = true
               
@@ -982,9 +1058,14 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
             if (!pollingInterval) {
               console.log('🔄 Ativando polling de backup para cobranças...')
               pollingInterval = setInterval(() => {
+                // Não fazer polling se houver linhas em edição (usuário digitando)
+                if (linhasEmEdicao.current.size > 0) {
+                  console.log('⏸️ Polling pausado: linhas em edição')
+                  return
+                }
                 console.log('🔄 Polling: Verificando mudanças na tabela cobranca...')
                 buscarCobrancasSupabase(false, true) // silentMode = true
-              }, 3000) // Verificar a cada 3 segundos
+              }, 15000) // Verificar a cada 15 segundos (reduzido de 3s para evitar travamento)
             }
           }
         })
@@ -996,9 +1077,14 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
       if (!pollingInterval) {
         console.log('🔄 Ativando polling de backup para cobranças...')
         pollingInterval = setInterval(() => {
+          // Não fazer polling se houver linhas em edição (usuário digitando)
+          if (linhasEmEdicao.current.size > 0) {
+            console.log('⏸️ Polling pausado: linhas em edição')
+            return
+          }
           console.log('🔄 Polling: Verificando mudanças na tabela cobranca...')
           buscarCobrancasSupabase(false, true) // silentMode = true
-        }, 3000) // Verificar a cada 3 segundos
+        }, 15000) // Verificar a cada 15 segundos (reduzido de 3s para evitar travamento)
       }
     }
 
@@ -1483,8 +1569,9 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
                             placeholder={mensagemPadrao}
                           />
                           {(cobranca.mensagem || mensagemPadrao).includes('[') && (
-                            <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded break-words overflow-wrap-anywhere">
-                              <strong>Preview:</strong> "{processarMensagem(cobranca.mensagem || mensagemPadrao, cobranca)}"
+                            <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded break-words max-w-full overflow-hidden whitespace-pre-wrap">
+                              <strong>Preview:</strong><br />
+                              <span className="break-words block mt-1">{processarMensagem(cobranca.mensagem || mensagemPadrao, cobranca)}</span>
                             </div>
                           )}
                         </div>

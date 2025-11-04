@@ -10,36 +10,37 @@ import { Building2 } from "lucide-react"
 import { AniversariantesTab } from "@/components/dashboard/tabs/AniversariantesTab"
 import { CobrancasTab } from "@/components/dashboard/tabs/CobrancasTab"
 
-// Chave UUID padrão da empresa (fallback)
-const EMPRESA_CHAVE_PADRAO = "f552a3d5-b400-4199-b852-e04deb4c36b1"
-
 export default function DashboardContent() {
   const [isLoading, setIsLoading] = useState(true)
-  const [empresaChave, setEmpresaChave] = useState<string>(EMPRESA_CHAVE_PADRAO)
+  const [empresaChave, setEmpresaChave] = useState<string | null>(null)
 
   const searchParams = useSearchParams()
 
-  // Efeito para ler parâmetro da URL
+  // Efeito para ler parâmetro da URL (obrigatório)
   useEffect(() => {
     const chaveUrl = searchParams.get('chave')
     if (chaveUrl) {
       console.log('🔗 Chave encontrada na URL:', chaveUrl)
       setEmpresaChave(chaveUrl)
     } else {
-      console.log('🔗 Usando chave padrão:', EMPRESA_CHAVE_PADRAO)
-      setEmpresaChave(EMPRESA_CHAVE_PADRAO)
+      console.log('⚠️ Chave não fornecida na URL. O parâmetro "chave" é obrigatório.')
+      setEmpresaChave(null)
     }
   }, [searchParams])
 
 
 
   useEffect(() => {
-    console.log('🏢 Carregando dashboard para empresa chave:', empresaChave)
-    
-    // Carregamento mais rápido - dados já estão no Supabase
-    setTimeout(() => {
+    if (empresaChave) {
+      console.log('🏢 Carregando dashboard para empresa chave:', empresaChave)
+      
+      // Carregamento mais rápido - dados já estão no Supabase
+      setTimeout(() => {
+        setIsLoading(false)
+      }, 500)
+    } else {
       setIsLoading(false)
-    }, 500)
+    }
   }, [empresaChave])
 
   return (
@@ -56,12 +57,14 @@ export default function DashboardContent() {
             </div>
             <div className="flex items-center gap-4">
               {/* Informações da empresa atual */}
-              <div className="flex items-center gap-2">
-                <Building2 className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium text-muted-foreground">
-                  Empresa: {empresaChave.substring(0, 8)}...
-                </span>
-              </div>
+              {empresaChave && (
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium text-muted-foreground">
+                    Empresa: {empresaChave.substring(0, 8)}...
+                  </span>
+                </div>
+              )}
               
               {/* Status do sistema */}
               <div className="flex items-center gap-2">
@@ -77,20 +80,44 @@ export default function DashboardContent() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
-        <Tabs defaultValue="aniversariantes" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="aniversariantes">🎉 Aniversariantes</TabsTrigger>
-            <TabsTrigger value="cobrancas">💰 Cobranças</TabsTrigger>
-          </TabsList>
+        {!empresaChave ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Parâmetro Obrigatório</CardTitle>
+              <CardDescription>
+                É necessário informar o parâmetro "chave" na URL para acessar o dashboard.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  <strong>Exemplo de URL:</strong>
+                </p>
+                <code className="block p-3 bg-gray-100 rounded text-sm">
+                  /dashboard?chave=f552a3d5-b400-4199-b852-e04deb4c36b1
+                </code>
+                <p className="text-sm text-muted-foreground mt-4">
+                  Por favor, adicione o parâmetro <code className="bg-gray-100 px-1 rounded">chave</code> na URL com o UUID da empresa.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Tabs defaultValue="aniversariantes" className="space-y-6">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="aniversariantes">🎉 Aniversariantes</TabsTrigger>
+              <TabsTrigger value="cobrancas">💰 Cobranças</TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="aniversariantes">
-            <AniversariantesTab empresaChave={empresaChave} isLoading={isLoading} />
-          </TabsContent>
+            <TabsContent value="aniversariantes">
+              <AniversariantesTab empresaChave={empresaChave} isLoading={isLoading} />
+            </TabsContent>
 
-          <TabsContent value="cobrancas">
-            <CobrancasTab empresaChave={empresaChave} isLoading={isLoading} />
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="cobrancas">
+              <CobrancasTab empresaChave={empresaChave} isLoading={isLoading} />
+            </TabsContent>
+          </Tabs>
+        )}
       </main>
 
       {/* Footer para embedding */}
