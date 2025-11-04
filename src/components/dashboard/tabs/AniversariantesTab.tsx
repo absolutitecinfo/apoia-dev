@@ -62,6 +62,69 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
     setToastMessage(null)
   }
 
+  // Função auxiliar para formatar data no timezone do Brasil
+  // Converte string "YYYY-MM-DD" para data local (não UTC) e formata
+  const formatarDataBrasil = (dataString: string | null): string => {
+    if (!dataString) return '-'
+    
+    // Parse da string "YYYY-MM-DD" como data local (não UTC)
+    // Se a string tem apenas data (sem hora), tratar como data local
+    if (dataString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const [year, month, day] = dataString.split('-').map(Number)
+      const dataLocal = new Date(year, month - 1, day) // month - 1 porque Date usa índice 0-11
+      return dataLocal.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+    }
+    
+    // Se for timestamp ISO, converter para timezone do Brasil
+    const data = new Date(dataString)
+    return data.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+  }
+
+  // Função auxiliar para formatar data e hora no timezone do Brasil
+  const formatarDataHoraBrasil = (timestamp: string | null): { data: string; hora: string } => {
+    if (!timestamp) return { data: '-', hora: '-' }
+    
+    const data = new Date(timestamp)
+    const dataFormatada = data.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+    const horaFormatada = data.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    
+    return { data: dataFormatada, hora: horaFormatada }
+  }
+
+  // Função auxiliar para obter data atual no timezone do Brasil (sem horas)
+  const getDataAtualBrasil = (): Date => {
+    // Obter componentes da data atual no timezone do Brasil
+    const formatter = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    })
+    const partes = formatter.formatToParts(new Date())
+    const dia = parseInt(partes.find(p => p.type === 'day')?.value || '1', 10)
+    const mes = parseInt(partes.find(p => p.type === 'month')?.value || '1', 10) - 1 // mês 0-indexed
+    const ano = parseInt(partes.find(p => p.type === 'year')?.value || '2025', 10)
+    
+    // Criar data local (não UTC) com os componentes obtidos
+    return new Date(ano, mes, dia, 0, 0, 0, 0)
+  }
+
+  // Função auxiliar para converter string de data para Date no timezone do Brasil
+  // Para strings "YYYY-MM-DD", cria data local (não UTC)
+  // Para timestamps ISO, converte para timezone do Brasil
+  const parseDataBrasil = (dataString: string | null): Date | null => {
+    if (!dataString) return null
+    
+    // Se for apenas data (YYYY-MM-DD), criar como data local
+    if (dataString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const [year, month, day] = dataString.split('-').map(Number)
+      return new Date(year, month - 1, day, 0, 0, 0, 0)
+    }
+    
+    // Se for timestamp ISO, já vem com timezone e será convertido automaticamente
+    return new Date(dataString)
+  }
+
   // Função para buscar dados da empresa atual
   const buscarEmpresaAtual = async () => {
     try {
@@ -436,16 +499,21 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
     const agora = new Date()
     switch (filtro) {
       case 'hoje':
-        const hoje = new Date()
-        hoje.setHours(0, 0, 0, 0)
-        return hoje
+        // Usar data atual no timezone do Brasil (sem horas)
+        return getDataAtualBrasil()
       case 'semana':
         const semana = new Date()
-        semana.setDate(agora.getDate() - 7)
+        // Calcular 7 dias atrás usando timezone do Brasil
+        const dataAtualBrasil = getDataAtualBrasil()
+        semana.setTime(dataAtualBrasil.getTime())
+        semana.setDate(semana.getDate() - 7)
         return semana
       case 'mes':
         const mes = new Date()
-        mes.setMonth(agora.getMonth() - 1)
+        // Calcular 1 mês atrás usando timezone do Brasil
+        const dataAtualBrasilMes = getDataAtualBrasil()
+        mes.setTime(dataAtualBrasilMes.getTime())
+        mes.setMonth(mes.getMonth() - 1)
         return mes
       case 'todos':
       default:
@@ -461,17 +529,43 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
       ? aniversariantes.filter(a => a.empresa_id === empresaAtual.id)
       : aniversariantes // Se não houver empresaAtual ainda, usar todos (mas isso não deve acontecer)
     
-    const coletadosNoPeriodo = aniversariantesDaEmpresa.filter(a => 
-      new Date(a.created_at) >= dataLimite
-    )
+    // Função auxiliar para extrair apenas a data (sem horas) no timezone do Brasil
+    const getDataBrasilSemHora = (timestamp: string | Date): Date => {
+      const data = timestamp instanceof Date ? timestamp : new Date(timestamp)
+      const formatter = new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      })
+      const partes = formatter.formatToParts(data)
+      const dia = parseInt(partes.find(p => p.type === 'day')?.value || '1', 10)
+      const mes = parseInt(partes.find(p => p.type === 'month')?.value || '1', 10) - 1
+      const ano = parseInt(partes.find(p => p.type === 'year')?.value || '2025', 10)
+      return new Date(ano, mes, dia, 0, 0, 0, 0)
+    }
+
+    // Converter created_at para data no timezone do Brasil para comparação
+    const coletadosNoPeriodo = aniversariantesDaEmpresa.filter(a => {
+      if (!a.created_at) return false
+      const dataCreatedBrasil = getDataBrasilSemHora(a.created_at)
+      const dataLimiteBrasil = getDataBrasilSemHora(dataLimite)
+      return dataCreatedBrasil >= dataLimiteBrasil
+    })
     
-    const enviadosNoPeriodo = aniversariantesDaEmpresa.filter(a => 
-      a.data_envio && new Date(a.data_envio) >= dataLimite
-    )
+    const enviadosNoPeriodo = aniversariantesDaEmpresa.filter(a => {
+      if (!a.data_envio) return false
+      const dataEnvioBrasil = getDataBrasilSemHora(a.data_envio)
+      const dataLimiteBrasil = getDataBrasilSemHora(dataLimite)
+      return dataEnvioBrasil >= dataLimiteBrasil
+    })
     
-    const pendentesPeriodo = aniversariantesDaEmpresa.filter(a => 
-      !a.enviou_msg && new Date(a.created_at) >= dataLimite
-    )
+    const pendentesPeriodo = aniversariantesDaEmpresa.filter(a => {
+      if (!a.created_at || a.enviou_msg) return false
+      const dataCreatedBrasil = getDataBrasilSemHora(a.created_at)
+      const dataLimiteBrasil = getDataBrasilSemHora(dataLimite)
+      return dataCreatedBrasil >= dataLimiteBrasil
+    })
     
     return {
       coletados: coletadosNoPeriodo.length,
@@ -1029,7 +1123,7 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
                       </TableCell>
                       <TableCell className="font-medium">{aniversariante.nome}</TableCell>
                     <TableCell>
-                      {aniversariante.dataNascimento ? new Date(aniversariante.dataNascimento).toLocaleDateString('pt-BR') : '-'}
+                      {formatarDataBrasil(aniversariante.dataNascimento)}
                     </TableCell>
                     <TableCell>
                       <Input
@@ -1060,10 +1154,10 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
                     </TableCell>
                     <TableCell>
                       <div className="text-sm">
-                        {new Date(aniversariante.created_at).toLocaleDateString('pt-BR')}
+                        {formatarDataHoraBrasil(aniversariante.created_at).data}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {new Date(aniversariante.created_at).toLocaleTimeString('pt-BR')}
+                        {formatarDataHoraBrasil(aniversariante.created_at).hora}
                       </div>
                     </TableCell>
                     <TableCell>
