@@ -41,6 +41,8 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
 
   // Estados para seleção de cobranças
   const [cobrancasSelecionadas, setCobrancasSelecionadas] = useState<Set<string>>(new Set())
+  // Contador para forçar re-renderização quando o Set mudar
+  const [versaoSelecao, setVersaoSelecao] = useState(0)
 
   // Estado para controlar toasts
   const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -549,10 +551,46 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
               ? { ...c, enviou: true, mensagem: c.mensagem || mensagemPadrao, data_envio: new Date().toISOString() }
               : c
           ))
+          
+          // Remove as cobranças enviadas da seleção
+          setCobrancasSelecionadas(prev => {
+            const newSet = new Set(prev)
+            cobrancasEnviadas.forEach(c => newSet.delete(c.id))
+            return newSet
+          })
+          
+          // Forçar atualização da versão de seleção para garantir re-renderização
+          setVersaoSelecao((v: number) => v + 1)
+          
           if (cobrancasFiltradas === 0) {
             showToast("Status atualizado no banco de dados", 'success')
           }
         } else if (cobrancasEnviadas.length > 0) {
+          // Mesmo com falha parcial, atualizar as que foram enviadas com sucesso
+          const idsEnviadasComSucesso = new Set(
+            updateResults
+              .map((r, idx) => r.success ? cobrancasEnviadas[idx].id : null)
+              .filter(id => id !== null)
+          )
+          
+          if (idsEnviadasComSucesso.size > 0) {
+            setCobrancas(prev => prev.map(c => 
+              idsEnviadasComSucesso.has(c.id)
+                ? { ...c, enviou: true, mensagem: c.mensagem || mensagemPadrao, data_envio: new Date().toISOString() }
+                : c
+            ))
+            
+            // Remove da seleção apenas as que foram enviadas com sucesso
+            setCobrancasSelecionadas(prev => {
+              const newSet = new Set(prev)
+              idsEnviadasComSucesso.forEach(id => newSet.delete(id))
+              return newSet
+            })
+            
+            // Forçar atualização da versão de seleção
+            setVersaoSelecao((v: number) => v + 1)
+          }
+          
           showToast(`Mensagens enviadas, mas apenas ${successCount}/${cobrancasEnviadas.length} status atualizados no banco`, 'warning')
         }
       } else {
@@ -731,7 +769,7 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
         const updateResult = await api.atualizarStatusEnvio('cobranca', cobranca.id, true, cobrancaComMensagem.mensagem)
         
         if (updateResult.success) {
-          // Atualiza o estado local
+          // Atualiza o estado local imediatamente
           setCobrancas(prev => prev.map(c => 
             c.id === cobranca.id 
               ? { ...c, enviou: true, mensagem: cobrancaComMensagem.mensagem, data_envio: new Date().toISOString() }
@@ -743,6 +781,10 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
             newSet.delete(cobranca.id)
             return newSet
           })
+          
+          // Forçar atualização da versão de seleção para garantir re-renderização
+          setVersaoSelecao((v: number) => v + 1)
+          
           showToast(`✅ Mensagem enviada para ${cobranca.nome} - removido da lista`, 'success')
         } else {
           showToast("Mensagem enviada, mas erro ao atualizar status no banco", 'warning')
@@ -783,6 +825,9 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
         return newSet
       })
       
+      // Forçar atualização da versão de seleção para garantir re-renderização
+      setVersaoSelecao((v: number) => v + 1)
+      
       console.log('✅ Cobrança excluída com sucesso')
       showToast("Cobrança excluída permanentemente", 'success')
       
@@ -807,24 +852,36 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
 
   // Função para marcar/desmarcar todas as cobranças
   const toggleTodas = () => {
+    console.log('🔄 toggleTodas chamado')
     const cobrancasPendentes = cobrancasFiltradas.map(c => c.id)
-    const todasSelecionadas = cobrancasPendentes.every(id => cobrancasSelecionadas.has(id))
+    const todasSelecionadasAtual = cobrancasPendentes.length > 0 && cobrancasPendentes.every(id => cobrancasSelecionadas.has(id))
     
-    if (todasSelecionadas) {
-      // Desmarcar todas
-      setCobrancasSelecionadas(prev => {
-        const newSet = new Set(prev)
+    console.log('📊 Estado atual:', {
+      cobrancasPendentes: cobrancasPendentes.length,
+      todasSelecionadasAtual,
+      selecionadasAtual: cobrancasSelecionadas.size
+    })
+    
+    // Usar função de atualização que garante que o React detecte a mudança
+    setCobrancasSelecionadas(prev => {
+      const newSet = new Set(prev)
+      
+      if (todasSelecionadasAtual) {
+        // Desmarcar todas
+        console.log('❌ Desmarcando todas')
         cobrancasPendentes.forEach(id => newSet.delete(id))
-        return newSet
-      })
-    } else {
-      // Marcar todas
-      setCobrancasSelecionadas(prev => {
-        const newSet = new Set(prev)
+      } else {
+        // Marcar todas
+        console.log('✅ Marcando todas')
         cobrancasPendentes.forEach(id => newSet.add(id))
-        return newSet
-      })
-    }
+      }
+      
+      console.log('✅ Novo estado:', newSet.size, 'IDs:', Array.from(newSet))
+      return newSet
+    })
+    
+    // Forçar re-renderização incrementando o contador
+    setVersaoSelecao((v: number) => v + 1)
   }
 
   // Função para excluir todas as cobranças selecionadas
@@ -858,6 +915,9 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
       setCobrancas(prev => prev.filter(c => !selecionadas.includes(c.id)))
       setCobrancasSelecionadas(new Set())
       
+      // Forçar atualização da versão de seleção para garantir re-renderização
+      setVersaoSelecao((v: number) => v + 1)
+      
       console.log('✅ Cobranças excluídas com sucesso')
       showToast(`${selecionadas.length} cobrança(s) excluída(s) permanentemente`, 'success')
       
@@ -883,6 +943,12 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
       return nomeMatch || celularMatch
     })
 
+  // Calcular se todas as cobranças filtradas estão selecionadas
+  const todasSelecionadas = cobrancasFiltradas.length > 0 && cobrancasFiltradas.every(c => cobrancasSelecionadas.has(c.id))
+  
+  // Log para debug (remover depois)
+  console.log('🔍 Render - todasSelecionadas:', todasSelecionadas, 'versao:', versaoSelecao, 'size:', cobrancasSelecionadas.size)
+
   // Carregar dados da empresa e cobranças automaticamente ao inicializar
   useEffect(() => {
     if (empresaChave) {
@@ -896,7 +962,7 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
     return cobrancas.map(c => c.id).sort().join(',')
   }, [cobrancasStatsKey])
 
-  // Marcar todas as novas cobranças por padrão
+  // Marcar todas as novas cobranças por padrão (apenas quando cobranças mudam, não quando seleção muda)
   useEffect(() => {
     // Verificar se há linhas em edição antes de atualizar seleções
     if (linhasEmEdicao.current.size > 0) {
@@ -908,13 +974,14 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
       .map(c => c.id)
     
     if (novasPendentes.length > 0) {
+      console.log('🆕 Marcando novas cobranças automaticamente:', novasPendentes.length)
       setCobrancasSelecionadas(prev => {
         const newSet = new Set(prev)
         novasPendentes.forEach(id => newSet.add(id))
         return newSet
       })
     }
-  }, [cobrancasIds, cobrancasSelecionadas]) // Usar IDs memoizados em vez do array completo
+  }, [cobrancasIds]) // Usar IDs memoizados em vez do array completo, SEM cobrancasSelecionadas
 
   // Memoizar o tamanho das cobranças para evitar recálculos desnecessários
   const cobrancasLength = useMemo(() => cobrancas.length, [cobrancasStatsKey])
@@ -1476,11 +1543,20 @@ export function CobrancasTab({ empresaChave, isLoading }: CobrancasTabProps) {
                       <input
                         type="checkbox"
                         id="select-all-cobrancas"
-                        checked={cobrancasFiltradas.length > 0 && cobrancasFiltradas.every(c => cobrancasSelecionadas.has(c.id))}
-                        onChange={toggleTodas}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        checked={todasSelecionadas}
+                        onChange={(e) => {
+                          e.stopPropagation()
+                          toggleTodas()
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                        }}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
                       />
-                      <label htmlFor="select-all-cobrancas" className="text-sm font-medium text-gray-700">
+                      <label 
+                        htmlFor="select-all-cobrancas" 
+                        className="text-sm font-medium text-gray-700 cursor-pointer select-none"
+                      >
                         Selecionar todas ({cobrancasFiltradas.length})
                       </label>
                     </div>

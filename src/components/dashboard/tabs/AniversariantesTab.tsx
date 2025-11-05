@@ -39,6 +39,8 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
   
   // Estados para seleção de aniversariantes
   const [aniversariantesSelecionados, setAniversariantesSelecionados] = useState<Set<number>>(new Set())
+  // Contador para forçar re-renderização quando o Set mudar
+  const [versaoSelecao, setVersaoSelecao] = useState(0)
 
   // Estado para controlar toasts
   const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -317,8 +319,44 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
               ? { ...a, enviou_msg: true, mensagem: a.mensagem || mensagemPadrao, data_envio: new Date().toISOString() }
               : a
           ))
+          
+          // Remove os aniversariantes enviados da seleção
+          setAniversariantesSelecionados(prev => {
+            const newSet = new Set(prev)
+            aniversariantesParaEnvio.forEach(a => newSet.delete(a.id))
+            return newSet
+          })
+          
+          // Forçar atualização da versão de seleção para garantir re-renderização
+          setVersaoSelecao((v: number) => v + 1)
+          
           showToast("Status atualizado no banco de dados", 'success')
         } else {
+          // Mesmo com falha parcial, atualizar as que foram enviadas com sucesso
+          const idsEnviadasComSucesso = new Set(
+            updateResults
+              .map((r, idx) => r.success ? aniversariantesParaEnvio[idx].id : null)
+              .filter(id => id !== null)
+          )
+          
+          if (idsEnviadasComSucesso.size > 0) {
+            setAniversariantes(prev => prev.map(a => 
+              idsEnviadasComSucesso.has(a.id)
+                ? { ...a, enviou_msg: true, mensagem: a.mensagem || mensagemPadrao, data_envio: new Date().toISOString() }
+                : a
+            ))
+            
+            // Remove da seleção apenas as que foram enviadas com sucesso
+            setAniversariantesSelecionados(prev => {
+              const newSet = new Set(prev)
+              idsEnviadasComSucesso.forEach(id => newSet.delete(id))
+              return newSet
+            })
+            
+            // Forçar atualização da versão de seleção
+            setVersaoSelecao((v: number) => v + 1)
+          }
+          
           showToast(`Mensagens enviadas, mas apenas ${successCount}/${aniversariantesParaEnvio.length} status atualizados no banco`, 'warning')
         }
       } else {
@@ -453,7 +491,7 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
         const updateResult = await api.atualizarStatusEnvio('aniversariante', aniversariante.id, true, aniversarianteComMensagem.mensagem)
         
         if (updateResult.success) {
-          // Atualiza o estado local
+          // Atualiza o estado local imediatamente
           setAniversariantes(prev => prev.map(a => 
             a.id === aniversariante.id 
               ? { ...a, enviou_msg: true, mensagem: aniversarianteComMensagem.mensagem, data_envio: new Date().toISOString() }
@@ -465,6 +503,10 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
             newSet.delete(aniversariante.id)
             return newSet
           })
+          
+          // Forçar atualização da versão de seleção para garantir re-renderização
+          setVersaoSelecao((v: number) => v + 1)
+          
           showToast(`✅ Mensagem enviada para ${aniversariante.nome} - removido da lista`, 'success')
         } else {
           showToast("Mensagem enviada, mas erro ao atualizar status no banco", 'warning')
@@ -503,6 +545,9 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
         newSet.delete(id)
         return newSet
       })
+      
+      // Forçar atualização da versão de seleção para garantir re-renderização
+      setVersaoSelecao((v: number) => v + 1)
       
       showToast("Aniversariante excluído permanentemente", 'success')
       
@@ -575,6 +620,9 @@ export function AniversariantesTab({ empresaChave, isLoading }: AniversariantesT
       // Se excluiu com sucesso do banco, remove da lista local
       setAniversariantes(prev => prev.filter(a => !selecionados.includes(a.id)))
       setAniversariantesSelecionados(new Set())
+      
+      // Forçar atualização da versão de seleção para garantir re-renderização
+      setVersaoSelecao((v: number) => v + 1)
       
       showToast(`${selecionados.length} aniversariante(s) excluído(s) permanentemente`, 'success')
       
